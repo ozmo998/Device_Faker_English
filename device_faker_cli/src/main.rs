@@ -2,7 +2,6 @@ use anyhow::Result;
 use argh::FromArgs;
 
 mod converter;
-mod template;
 
 /// Device Faker configuration tool
 #[derive(FromArgs)]
@@ -18,8 +17,6 @@ enum Command {
     Convert(ConvertArgs),
     /// Convert configuration from a ZIP archive containing system.prop
     ConvertZip(ConvertZipArgs),
-    /// Import a template from a source
-    Import(ImportArgs),
 }
 
 /// Convert configuration formats
@@ -31,19 +28,6 @@ struct ConvertArgs {
     input: String,
 
     /// output file path
-    #[argh(option, short = 'o', long = "output")]
-    output: String,
-}
-
-/// Import a template from a source
-#[derive(FromArgs)]
-#[argh(subcommand, name = "import")]
-struct ImportArgs {
-    /// source of the template (e.g., URL or local path)
-    #[argh(option, short = 's', long = "source")]
-    source: String,
-
-    /// output file path for the imported template
     #[argh(option, short = 'o', long = "output")]
     output: String,
 }
@@ -70,9 +54,6 @@ fn main() -> Result<()> {
         }
         Command::ConvertZip(args) => {
             converter::convert_zip_config(&args.input, &args.output)?;
-        }
-        Command::Import(args) => {
-            template::import_template(&args.source, &args.output)?;
         }
     }
 

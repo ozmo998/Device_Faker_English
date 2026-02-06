@@ -7,7 +7,5 @@ authors = ["Seyud"]
 [dependencies]
 anyhow = { version = "1.0.100", default-features = false }
 argh = "0.1"
-minreq = { version = "2.12.0", default-features = false, features = ["https-rustls", "json-using-serde"] }
-toml = { version = "0.8.19", default-features = false, features = ["parse"] }
 walkdir = "2.5.0"
 zip = { version = "0.6.6", default-features = false, features = ["deflate"] }
