@@ -88,10 +88,12 @@ jobs:
             🔗 [View Workflow](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
         run: |
           sudo apt-get update && sudo apt-get install -y jq
-          ESCAPED_MESSAGE=$(echo "${COMMIT_MESSAGE}" | jq -R -s '.')
+          ESCAPED_MARKDOWN=$(printf '%s' "${COMMIT_MESSAGE}" | \
+            sed -e 's/\\/\\\\/g' -e 's/\([_*\[\]()~`>#+\-=|{}.!]\)/\\\1/g')
+          ESCAPED_MESSAGE=$(printf '%s' "${ESCAPED_MARKDOWN}" | jq -R -s '.')
           
           curl -v "https://api.telegram.org/bot${BOT_TOKEN}/sendMediaGroup" \
-               -F "chat_id=${CHAT_ID}" \
-               -F "message_thread_id=${MESSAGE_THREAD_ID}" \
-               -F "media=[{\"type\":\"document\",\"media\":\"attach://file\",\"parse_mode\":\"MarkdownV2\",\"caption\":\"${ESCAPED_MESSAGE}\"}]" \
-               -F "file=@output/device_faker-(release).zip"
+            -F "chat_id=${CHAT_ID}" \
+            -F "message_thread_id=${MESSAGE_THREAD_ID}" \
+            -F "media=[{\"type\":\"document\",\"media\":\"attach://file\",\"parse_mode\":\"MarkdownV2\",\"caption\":${ESCAPED_MESSAGE}}]" \
+            -F "file=@output/device_faker-(release).zip"
