@@ -93,5 +93,5 @@ jobs:
           curl -v "https://api.telegram.org/bot${BOT_TOKEN}/sendMediaGroup" \
                -F "chat_id=${CHAT_ID}" \
                -F "message_thread_id=${MESSAGE_THREAD_ID}" \
-               -F "media=[{\"type\":\"document\",\"media\":\"attach://file\",\"parse_mode\":\"MarkdownV2\",\"caption\":${ESCAPED_MESSAGE}}]" \
+               -F "media=[{\"type\":\"document\",\"media\":\"attach://file\",\"parse_mode\":\"MarkdownV2\",\"caption\":\"${ESCAPED_MESSAGE}\"}]" \
                -F "file=@output/device_faker-(release).zip"
