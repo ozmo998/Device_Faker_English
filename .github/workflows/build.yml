@@ -30,7 +30,7 @@ jobs:
       - name: Update module.prop version info
         run: |
           SHORT_HASH=$(git rev-parse --short HEAD)
-          TODAY=$(date +%Y%m%d)
+          TODAY=$(TZ='Asia/Shanghai' date +%Y%m%d)
           RUN_NUMBER=${{ github.run_number }}
           sed -i "s/^version=\(.*\)/version=\1 (${RUN_NUMBER}-${SHORT_HASH}-release)/" module/module.prop
           sed -i "s/^versionCode=.*/versionCode=${TODAY}/" module/module.prop
