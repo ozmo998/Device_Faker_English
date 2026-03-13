@@ -93,30 +93,30 @@
           <!-- 可选元数据字段 -->
           <div
             v-if="
-              template.template &&
-              (template.template.version ||
-                template.template.version_code ||
-                template.template.author ||
-                template.template.description)
+              template.meta &&
+              (template.meta.version ||
+                template.meta.version_code ||
+                template.meta.author ||
+                template.meta.description)
             "
             class="template-meta"
           >
-            <p v-if="template.template.version || template.template.version_code" class="meta-line">
+            <p v-if="template.meta.version || template.meta.version_code" class="meta-line">
               <span class="label">{{ t('templates.labels.version') }}:</span>
               <span class="value">
-                {{ template.template.version || '' }}
-                <span v-if="template.template.version_code" class="version-code"
-                  >({{ template.template.version_code }})</span
+                {{ template.meta.version || '' }}
+                <span v-if="template.meta.version_code" class="version-code"
+                  >({{ template.meta.version_code }})</span
                 >
               </span>
             </p>
-            <p v-if="template.template.author" class="meta-line">
+            <p v-if="template.meta.author" class="meta-line">
               <span class="label">{{ t('templates.labels.author') }}:</span>
-              <span class="value">{{ template.template.author }}</span>
+              <span class="value">{{ template.meta.author }}</span>
             </p>
-            <p v-if="template.template.description" class="meta-line meta-description">
+            <p v-if="template.meta.description" class="meta-line meta-description">
               <span class="label">{{ t('templates.labels.description') }}:</span>
-              <span class="value">{{ template.template.description }}</span>
+              <span class="value">{{ template.meta.description }}</span>
             </p>
           </div>
 
@@ -246,9 +246,9 @@ async function loadTemplates() {
     Promise.all(
       result.templates.map(async (t, index) => {
         try {
-          const template = await downloadTemplate(t)
-          if (template) {
-            templates.value[index] = { ...t, template }
+          const result = await downloadTemplate(t)
+          if (result) {
+            templates.value[index] = { ...t, template: result.template, meta: result.meta }
             successCount++
           } else {
             failCount++

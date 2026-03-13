@@ -184,27 +184,6 @@
         </el-form-item>
       </el-form>
 
-      <!-- 元数据只读显示区域 -->
-      <div v-if="hasMetaData" class="config-meta">
-        <div v-if="customMetaData.version || customMetaData.version_code" class="meta-item">
-          <span class="meta-label">{{ t('templates.labels.version') }}:</span>
-          <span class="meta-value">
-            {{ customMetaData.version || '' }}
-            <span v-if="customMetaData.version_code" class="version-code"
-              >({{ customMetaData.version_code }})</span
-            >
-          </span>
-        </div>
-        <div v-if="customMetaData.author" class="meta-item">
-          <span class="meta-label">{{ t('templates.labels.author') }}:</span>
-          <span class="meta-value">{{ customMetaData.author }}</span>
-        </div>
-        <div v-if="customMetaData.description" class="meta-item meta-description">
-          <span class="meta-label">{{ t('templates.labels.description') }}:</span>
-          <span class="meta-value">{{ customMetaData.description }}</span>
-        </div>
-      </div>
-
       <!-- 自定义配置操作按钮 -->
       <div class="config-actions">
         <el-button v-if="hasCustomConfig" type="danger" @click="removeCustomConfig">
@@ -279,24 +258,6 @@ const customFormData = ref({
   characteristics: '',
   force_denylist_unmount: undefined as boolean | undefined,
   mode: undefined as 'lite' | 'full' | 'resetprop' | undefined,
-})
-
-// 元数据字段（只读显示）
-const customMetaData = ref({
-  version: '' as string | undefined,
-  version_code: undefined as number | undefined,
-  author: '' as string | undefined,
-  description: '' as string | undefined,
-})
-
-// 判断是否有元数据需要显示
-const hasMetaData = computed(() => {
-  return (
-    customMetaData.value.version ||
-    customMetaData.value.version_code ||
-    customMetaData.value.author ||
-    customMetaData.value.description
-  )
 })
 
 const dialogTitle = computed(() =>
@@ -396,13 +357,6 @@ function syncFromExistingConfig() {
       force_denylist_unmount: appConfig.force_denylist_unmount,
       mode: appConfig.mode as 'lite' | 'full' | 'resetprop' | undefined,
     }
-    // 同步元数据字段（只读显示）
-    customMetaData.value = {
-      version: appConfig.version,
-      version_code: appConfig.version_code,
-      author: appConfig.author,
-      description: appConfig.description,
-    }
   } else {
     hasCustomConfig.value = false
     originalCustomConfig.value = null
@@ -457,12 +411,6 @@ function resetCustomFormData() {
     characteristics: '',
     force_denylist_unmount: undefined,
     mode: undefined,
-  }
-  customMetaData.value = {
-    version: undefined,
-    version_code: undefined,
-    author: undefined,
-    description: undefined,
   }
 }
 
@@ -613,38 +561,33 @@ watch(
 }
 
 .config-tab {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 1rem;
   border-radius: 0.375rem;
   cursor: pointer;
-  transition: all 0.2s;
-  border: 1px solid transparent;
+  transition: all 0.2s ease;
 }
 
 .config-tab:hover {
-  background: var(--bg-secondary);
+  background: var(--hover);
 }
 
 .config-tab.active {
-  background: var(--primary-color-light, rgba(64, 158, 255, 0.1));
-  border-color: var(--primary-color, #409eff);
-}
-
-.config-tab.configured {
-  position: relative;
+  background: color-mix(in srgb, var(--primary-color, #409eff) 12%, transparent);
 }
 
 .config-tab.configured::after {
   content: '';
   position: absolute;
-  top: 0.25rem;
-  right: 0.25rem;
-  width: 6px;
-  height: 6px;
+  top: 0.3rem;
+  right: 0.3rem;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
   background: var(--success-color, #67c23a);
-  border-radius: 50%;
 }
 
 .tab-label {
@@ -654,7 +597,7 @@ watch(
 
 .config-tab.active .tab-label {
   color: var(--primary-color, #409eff);
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .template-selector,
@@ -674,51 +617,6 @@ watch(
   justify-content: flex-start;
 }
 
-.config-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
-  margin-top: 1rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--border);
-}
-
-.meta-item {
-  display: flex;
-  gap: 0.5rem;
-  font-size: 0.8125rem;
-}
-
-.meta-label {
-  color: var(--text-secondary);
-  min-width: 50px;
-  flex-shrink: 0;
-}
-
-.meta-value {
-  color: var(--text);
-  flex: 1;
-  word-break: break-all;
-}
-
-.version-code {
-  color: var(--text-secondary);
-  font-size: 0.75rem;
-}
-
-.meta-description .meta-value {
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-  line-height: 1.4;
-}
-
-.meta-description .meta-label {
-  font-size: 0.75rem;
-  line-height: 1.4;
-}
-</style>
-
-<style scoped>
 .app-config-dialog :deep(.el-dialog) {
   margin-top: 5vh !important;
   margin-bottom: 80px !important;
@@ -784,21 +682,6 @@ watch(
   .app-config-dialog :deep(.el-dialog__footer) {
     border-top: 1px solid rgba(255, 255, 255, 0.1);
     background: rgba(0, 0, 0, 0.3);
-  }
-}
-
-.app-config-dialog :deep(.el-overlay) {
-  z-index: 2000 !important;
-  backdrop-filter: blur(8px) brightness(0.7) !important;
-  -webkit-backdrop-filter: blur(8px) brightness(0.7) !important;
-  background-color: rgba(0, 0, 0, 0.6) !important;
-}
-
-@media (prefers-color-scheme: dark) {
-  .app-config-dialog :deep(.el-overlay) {
-    backdrop-filter: blur(8px) brightness(0.5) !important;
-    -webkit-backdrop-filter: blur(8px) brightness(0.5) !important;
-    background-color: rgba(0, 0, 0, 0.7) !important;
   }
 }
 </style>

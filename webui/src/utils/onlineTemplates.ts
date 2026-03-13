@@ -1,6 +1,7 @@
 import { parse as parseToml } from 'smol-toml'
-import type { Template } from '../types'
+import type { Template, TemplateMeta } from '../types'
 import { execCommand } from './ksu'
+import { extractTemplateMeta, sanitizeTemplate } from './config'
 
 const GITEE_OWNER = 'Seyud'
 const GITEE_REPO = 'device_faker_config_mirror'
@@ -195,6 +196,7 @@ export interface OnlineTemplate {
   path: string
   downloadUrl: string
   template?: Template
+  meta?: TemplateMeta
 }
 
 export interface OnlineTemplatesResult {
@@ -503,7 +505,9 @@ export async function fetchOnlineTemplates(): Promise<OnlineTemplatesResult> {
   return { templates, brands }
 }
 
-export async function downloadTemplate(onlineTemplate: OnlineTemplate): Promise<Template | null> {
+export async function downloadTemplate(
+  onlineTemplate: OnlineTemplate
+): Promise<{ template: Template; meta?: TemplateMeta } | null> {
   const tempFile = `${TEMP_DIR}/template_${Date.now()}.toml`
 
   try {
@@ -522,7 +526,11 @@ export async function downloadTemplate(onlineTemplate: OnlineTemplate): Promise<
     if (parsed.templates) {
       const templateKey = Object.keys(parsed.templates)[0]
       if (templateKey) {
-        return parsed.templates[templateKey] as Template
+        const rawTemplate = parsed.templates[templateKey]
+        return {
+          template: sanitizeTemplate(rawTemplate),
+          meta: extractTemplateMeta(rawTemplate),
+        }
       }
     }
 
@@ -538,8 +546,12 @@ export async function downloadTemplates(
 ): Promise<OnlineTemplate[]> {
   const results = await Promise.all(
     onlineTemplates.map(async (t) => {
-      const template = await downloadTemplate(t)
-      return { ...t, template: template || undefined }
+      const result = await downloadTemplate(t)
+      return {
+        ...t,
+        template: result?.template,
+        meta: result?.meta,
+      }
     })
   )
   return results.filter((t) => t.template !== undefined)

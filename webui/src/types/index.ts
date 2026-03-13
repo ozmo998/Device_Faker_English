@@ -1,3 +1,9 @@
+export type SpoofMode = 'lite' | 'full' | 'resetprop'
+
+export interface CustomProps {
+  [key: string]: string
+}
+
 // 设备信息接口
 export interface DeviceInfo {
   manufacturer?: string
@@ -11,14 +17,14 @@ export interface DeviceInfo {
   characteristics?: string
   android_version?: string
   sdk_int?: number
+  custom_props?: CustomProps
   force_denylist_unmount?: boolean
 }
 
 // 机型模板接口
 export interface Template extends DeviceInfo {
   packages?: string[]
-  mode?: 'lite' | 'full' | 'resetprop'
-  // 可选的元数据字段
+  mode?: SpoofMode
   version?: string
   version_code?: number
   author?: string
@@ -28,8 +34,10 @@ export interface Template extends DeviceInfo {
 // 应用配置接口
 export interface AppConfig extends DeviceInfo {
   package: string
-  mode?: 'lite' | 'full' | 'resetprop'
-  // 可选的元数据字段
+  mode?: SpoofMode
+}
+
+export interface TemplateMeta {
   version?: string
   version_code?: number
   author?: string
@@ -38,7 +46,7 @@ export interface AppConfig extends DeviceInfo {
 
 // 配置文件接口
 export interface Config {
-  default_mode?: 'lite' | 'full' | 'resetprop'
+  default_mode?: SpoofMode
   default_force_denylist_unmount?: boolean
   debug?: boolean
   templates?: Record<string, Template>

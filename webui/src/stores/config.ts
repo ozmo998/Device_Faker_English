@@ -6,6 +6,11 @@ import { parse as parseToml, stringify as stringifyToml } from 'smol-toml'
 import { normalizePackageName } from '../utils/package'
 import { toast } from 'kernelsu-alt'
 import { useI18n } from '../utils/i18n'
+import {
+  mergeAppConfigWithExisting,
+  mergeTemplateWithExisting,
+  sanitizeConfigForSave,
+} from '../utils/config'
 
 const CONFIG_PATH = '/data/adb/device_faker/config/config.toml'
 const MODULE_PROP_PATH = '/data/adb/modules/device_faker/module.prop'
@@ -54,8 +59,6 @@ export const useConfigStore = defineStore('config', () => {
         await mkdir('/data/adb/device_faker/config')
         config.value = {
           default_mode: 'lite',
-          templates: {},
-          apps: [],
         }
         await saveConfig()
         return
@@ -86,8 +89,9 @@ export const useConfigStore = defineStore('config', () => {
     loading.value = true
     error.value = null
     try {
+      const configToSave = sanitizeConfigForSave(config.value)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const content = stringifyToml(config.value as any)
+      const content = stringifyToml(configToSave as any)
       if (!content || content.trim().length === 0) {
         throw new Error(t('config.empty_content'))
       }
@@ -173,7 +177,8 @@ export const useConfigStore = defineStore('config', () => {
     if (!config.value.templates) {
       config.value.templates = {}
     }
-    config.value.templates[name] = template
+
+    config.value.templates[name] = mergeTemplateWithExisting(config.value.templates[name], template)
   }
 
   // 删除模板
@@ -190,7 +195,7 @@ export const useConfigStore = defineStore('config', () => {
     }
     const index = config.value.apps.findIndex((a: AppConfig) => a.package === appConfig.package)
     if (index >= 0) {
-      config.value.apps[index] = appConfig
+      config.value.apps[index] = mergeAppConfigWithExisting(config.value.apps[index], appConfig)
     } else {
       config.value.apps.push(appConfig)
     }
