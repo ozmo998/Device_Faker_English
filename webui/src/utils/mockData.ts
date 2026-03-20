@@ -48,11 +48,20 @@ description=机型伪装模块
 
 export const mockInstalledApps = [
   {
+    packageName: 'com.android.settings',
+    appName: '设置',
+    versionName: '15',
+    versionCode: 35,
+    installed: true,
+    isSystem: true,
+  },
+  {
     packageName: 'com.android.chrome',
     appName: 'Chrome',
     versionName: '120.0.6099.144',
     versionCode: 609914400,
     installed: true,
+    isSystem: false,
   },
   {
     packageName: 'com.tencent.mm',
@@ -60,6 +69,7 @@ export const mockInstalledApps = [
     versionName: '8.0.40',
     versionCode: 2340,
     installed: true,
+    isSystem: false,
   },
   {
     packageName: 'com.tencent.mobileqq',
@@ -67,6 +77,7 @@ export const mockInstalledApps = [
     versionName: '9.0.0',
     versionCode: 9000,
     installed: true,
+    isSystem: false,
   },
   {
     packageName: 'com.mobilelegends.mi',
@@ -74,6 +85,7 @@ export const mockInstalledApps = [
     versionName: '1.8.20',
     versionCode: 18200,
     installed: true,
+    isSystem: false,
   },
   {
     packageName: 'com.supercell.brawlstars',
@@ -81,6 +93,7 @@ export const mockInstalledApps = [
     versionName: '51.170',
     versionCode: 51170,
     installed: true,
+    isSystem: false,
   },
   {
     packageName: 'com.levelinfinite.sgameGlobal',
@@ -88,6 +101,7 @@ export const mockInstalledApps = [
     versionName: '2.9.0',
     versionCode: 29000,
     installed: true,
+    isSystem: false,
   },
   {
     packageName: 'com.omarea.vtools',
@@ -95,5 +109,6 @@ export const mockInstalledApps = [
     versionName: '5.6.1',
     versionCode: 561,
     installed: true,
+    isSystem: false,
   },
 ]

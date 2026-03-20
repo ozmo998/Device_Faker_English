@@ -1,6 +1,11 @@
 <template>
   <div class="page-header">
-    <h2 class="page-title">{{ t('apps.title') }}</h2>
+    <div class="page-header-top">
+      <h2 class="page-title">{{ t('apps.title') }}</h2>
+      <el-button class="system-toggle-btn" plain size="small" @click="toggleSystemApps">
+        {{ showSystemApps ? t('apps.actions.hide_system') : t('apps.actions.show_system') }}
+      </el-button>
+    </div>
     <el-input
       v-model="searchModel"
       :placeholder="t('apps.search_placeholder')"
@@ -38,10 +43,15 @@ const props = defineProps<{
   filterType: FilterType
   totalCount: number
   configuredCount: number
+  showSystemApps: boolean
   loading?: boolean
 }>()
 
-const emit = defineEmits<{ 'update:searchQuery': [string]; 'update:filterType': [FilterType] }>()
+const emit = defineEmits<{
+  'update:searchQuery': [string]
+  'update:filterType': [FilterType]
+  'update:showSystemApps': [boolean]
+}>()
 
 const { t } = useI18n()
 
@@ -51,6 +61,7 @@ const searchModel = computed({
 })
 
 const setFilter = (type: FilterType) => emit('update:filterType', type)
+const toggleSystemApps = () => emit('update:showSystemApps', !props.showSystemApps)
 </script>
 
 <style scoped>
@@ -62,10 +73,60 @@ const setFilter = (type: FilterType) => emit('update:filterType', type)
   margin-bottom: 0.5rem;
 }
 
+.page-header-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  min-width: 0;
+}
+
 .page-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
   font-size: 1.5rem;
   font-weight: 600;
   color: var(--text);
+  line-height: 1.2;
+}
+
+.system-toggle-btn {
+  flex: 0 1 11rem;
+  min-width: 0;
+  height: auto;
+  margin-left: auto;
+  padding: 0.5rem 0.875rem;
+  border-radius: 0.75rem;
+  border-color: var(--border);
+  background: var(--card-bg);
+  color: var(--text);
+  box-shadow: 0 2px 6px var(--shadow);
+  transition:
+    transform 0.16s ease,
+    opacity 0.16s ease,
+    color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.system-toggle-btn :deep(span) {
+  white-space: normal;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.system-toggle-btn:hover,
+.system-toggle-btn:focus-visible {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.system-toggle-btn:active {
+  transform: scale(0.97);
+  opacity: 0.88;
+  box-shadow: 0 1px 3px var(--shadow);
 }
 
 .search-input {

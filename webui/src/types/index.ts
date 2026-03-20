@@ -61,10 +61,12 @@ export interface InstalledApp {
   versionName?: string
   versionCode?: number
   installed?: boolean
+  isSystem?: boolean
 }
 
 // 设置接口
 export interface Settings {
   theme: 'system' | 'light' | 'dark'
   language: 'system' | 'zh' | 'en'
+  showSystemApps: boolean
 }

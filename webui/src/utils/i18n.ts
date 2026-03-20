@@ -187,6 +187,10 @@ export const messages = {
     apps: {
       title: '应用管理',
       search_placeholder: '搜索应用或包名',
+      actions: {
+        show_system: '显示系统应用',
+        hide_system: '隐藏系统应用',
+      },
       tabs: {
         all: '全部',
         configured: '已配置',
@@ -473,6 +477,10 @@ export const messages = {
     apps: {
       title: 'App Management',
       search_placeholder: 'Search app or package',
+      actions: {
+        show_system: 'Show System Apps',
+        hide_system: 'Hide System Apps',
+      },
       tabs: {
         all: 'All',
         configured: 'Configured',

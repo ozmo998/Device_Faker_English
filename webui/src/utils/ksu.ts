@@ -1,5 +1,30 @@
 import { exec, listPackages, getPackagesInfo } from 'kernelsu-alt'
 import { normalizePackageName } from './package'
+import type { InstalledApp } from '../types'
+
+type PackageQueryType = 'user' | 'system' | 'all'
+
+interface GetInstalledAppsOptions {
+  includeSystem?: boolean
+  packageType?: PackageQueryType
+}
+
+interface GetAppsInfoOptions {
+  fallbackType?: PackageQueryType
+  assumeInstalled?: boolean
+}
+
+interface KernelSUPackageInfo {
+  packageName: string
+  versionName?: string
+  versionCode?: number
+  appLabel?: string
+  isSystem?: boolean
+}
+
+const getPackagesInfoBatch = getPackagesInfo as unknown as (
+  pkg: string | string[]
+) => Promise<KernelSUPackageInfo | KernelSUPackageInfo[]>
 
 // 执行命令
 export async function execCommand(command: string): Promise<string> {
@@ -104,13 +129,17 @@ async function getInstalledAppsViaWebUIX(): Promise<string[]> {
 /**
  * 使用 kernelsu-alt 的 listPackages API 获取已安装应用列表
  */
-async function getInstalledAppsViaKernelSU(): Promise<string[]> {
+async function getInstalledAppsViaKernelSU(type: PackageQueryType): Promise<string[]> {
   try {
-    const [userPkgs, systemPkgs] = await Promise.all([
-      listPackages('user').catch(() => []),
-      listPackages('system').catch(() => []),
-    ])
-    return [...userPkgs, ...systemPkgs]
+    if (type === 'all') {
+      const [userPkgs, systemPkgs] = await Promise.all([
+        listPackages('user').catch(() => []),
+        listPackages('system').catch(() => []),
+      ])
+      return [...userPkgs, ...systemPkgs]
+    }
+
+    return await listPackages(type)
   } catch {
     return []
   }
@@ -139,93 +168,103 @@ function getAppInfoViaWebUIX(
 }
 
 /**
- * 使用 kernelsu-alt 的 getPackagesInfo API 获取单个应用信息
+ * 使用 kernelsu-alt 的 getPackagesInfo API 获取应用信息
  */
 async function getAppInfoViaKernelSU(
-  packageName: string
-): Promise<{ appName: string; versionName: string; versionCode: number } | null> {
+  packageNames: string[]
+): Promise<Map<string, KernelSUPackageInfo>> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   if (typeof (globalThis as any).ksu?.getPackagesInfo === 'undefined') {
-    return null
+    return new Map()
   }
 
   try {
-    const info = await getPackagesInfo(packageName)
-    return {
-      appName: info.appLabel || packageName,
-      versionName: info.versionName || '',
-      versionCode: info.versionCode || 0,
-    }
+    const info = await getPackagesInfoBatch(packageNames)
+    const infos = Array.isArray(info) ? info : [info]
+
+    return infos.reduce((acc, item) => {
+      const normalized = normalizePackageName(item.packageName)
+      acc.set(normalized, item)
+      return acc
+    }, new Map<string, KernelSUPackageInfo>())
   } catch {
-    return null
+    return new Map()
   }
 }
 
+async function getPackageList(type: PackageQueryType): Promise<string[]> {
+  let packageList = await getInstalledAppsViaKernelSU(type)
+
+  // WebUI-X 只能获取全量列表，作为兜底方案使用
+  if (packageList.length === 0 && type === 'all' && typeof window.$packageManager !== 'undefined') {
+    packageList = await getInstalledAppsViaWebUIX()
+  }
+
+  if (
+    packageList.length === 0 &&
+    type === 'user' &&
+    typeof window.$packageManager !== 'undefined'
+  ) {
+    packageList = await getInstalledAppsViaWebUIX()
+  }
+
+  return Array.from(new Set(packageList))
+}
+
+export async function getAppsInfo(packageNames: string[], options: GetAppsInfoOptions = {}) {
+  const uniquePackages = Array.from(new Set(packageNames.map((pkg) => pkg.trim()).filter(Boolean)))
+
+  if (uniquePackages.length === 0) {
+    return []
+  }
+
+  const { fallbackType, assumeInstalled = false } = options
+  const kernelSUInfo = await getAppInfoViaKernelSU(
+    uniquePackages.map((pkg) => normalizePackageName(pkg))
+  )
+
+  return uniquePackages.map<InstalledApp>((packageName) => {
+    const normalizedPackage = normalizePackageName(packageName)
+    const info = kernelSUInfo.get(normalizedPackage)
+    const webUIXInfo = info ? null : getAppInfoViaWebUIX(normalizedPackage)
+
+    return {
+      packageName,
+      appName: info?.appLabel || webUIXInfo?.appName || packageName,
+      icon: '',
+      versionName: info?.versionName || webUIXInfo?.versionName || '',
+      versionCode: info?.versionCode || webUIXInfo?.versionCode || 0,
+      installed: assumeInstalled || Boolean(info || webUIXInfo),
+      isSystem:
+        info?.isSystem ??
+        (fallbackType === 'system' ? true : fallbackType === 'user' ? false : undefined),
+    }
+  })
+}
+
 // 获取已安装应用列表
-export async function getInstalledApps() {
+export async function getInstalledApps(options: GetInstalledAppsOptions = {}) {
   // 开发模式返回模拟数据
   if (import.meta.env?.DEV) {
     const { mockInstalledApps } = await import('./mockData')
-    return mockInstalledApps
+    const packageType = options.packageType || (options.includeSystem ? 'all' : 'user')
+    return mockInstalledApps.filter((app) => {
+      if (packageType === 'system') return app.isSystem === true
+      if (packageType === 'user') return app.isSystem !== true
+      return true
+    })
   }
 
   try {
-    let packageList: string[] = []
-
-    // 优先使用 WebUI-X $packageManager API
-    if (typeof window.$packageManager !== 'undefined') {
-      packageList = await getInstalledAppsViaWebUIX()
-    }
-
-    // 如果 WebUI-X 没有返回结果，回退到 kernelsu-alt API
-    if (packageList.length === 0) {
-      packageList = await getInstalledAppsViaKernelSU()
-    }
+    const packageType = options.packageType || (options.includeSystem ? 'all' : 'user')
+    const packageList = await getPackageList(packageType)
 
     // 如果仍然没有获取到应用列表，返回空列表
     if (packageList.length === 0) {
       return []
     }
 
-    // 去重
-    packageList = Array.from(new Set(packageList))
-
-    const apps = []
-
-    // 批量获取应用信息
-    for (const pkg of packageList) {
-      const normalizedPkg = normalizePackageName(pkg)
-      let appName = pkg
-      let versionName = ''
-      let versionCode = 0
-
-      // 优先使用 WebUI-X $packageManager API 获取应用信息
-      const webUIXInfo = getAppInfoViaWebUIX(normalizedPkg)
-      if (webUIXInfo) {
-        appName = webUIXInfo.appName
-        versionName = webUIXInfo.versionName
-        versionCode = webUIXInfo.versionCode
-      } else {
-        // 回退到 kernelsu-alt API
-        const ksuInfo = await getAppInfoViaKernelSU(normalizedPkg)
-        if (ksuInfo) {
-          appName = ksuInfo.appName
-          versionName = ksuInfo.versionName
-          versionCode = ksuInfo.versionCode
-        }
-      }
-
-      apps.push({
-        packageName: pkg,
-        appName,
-        icon: '',
-        versionName,
-        versionCode,
-        installed: true,
-      })
-    }
-
-    return apps
+    return await getAppsInfo(packageList, { fallbackType: packageType, assumeInstalled: true })
   } catch {
     return []
   }

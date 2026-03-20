@@ -8,6 +8,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const settings = ref<Settings>({
     theme: 'system',
     language: 'system',
+    showSystemApps: false,
   })
 
   // 加载设置
@@ -15,7 +16,13 @@ export const useSettingsStore = defineStore('settings', () => {
     const stored = localStorage.getItem(SETTINGS_KEY)
     if (stored) {
       try {
-        settings.value = JSON.parse(stored)
+        const parsed = JSON.parse(stored) as Partial<Settings>
+        settings.value = {
+          theme: 'system',
+          language: 'system',
+          showSystemApps: false,
+          ...parsed,
+        }
       } catch {
         // 使用默认设置
       }
@@ -45,6 +52,14 @@ export const useSettingsStore = defineStore('settings', () => {
     saveSettings()
   }
 
+  const showSystemApps = ref(false)
+
+  function setShowSystemApps(enabled: boolean) {
+    settings.value.showSystemApps = enabled
+    showSystemApps.value = enabled
+    saveSettings()
+  }
+
   // 监听设置变化
   watch(settings, saveSettings, { deep: true })
 
@@ -52,12 +67,15 @@ export const useSettingsStore = defineStore('settings', () => {
   loadSettings()
   theme.value = settings.value.theme
   language.value = settings.value.language
+  showSystemApps.value = settings.value.showSystemApps
 
   return {
     settings,
     theme,
     language,
+    showSystemApps,
     setTheme,
     setLanguage,
+    setShowSystemApps,
   }
 })

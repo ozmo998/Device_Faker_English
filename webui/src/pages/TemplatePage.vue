@@ -15,6 +15,7 @@
     />
 
     <TemplateDialog
+      v-if="dialogVisible"
       v-model="dialogVisible"
       :is-editing="isEditing"
       :locale="locale"
@@ -23,25 +24,28 @@
       @saved="handleTemplateSaved"
     />
 
-    <OnlineTemplateDialog v-model="onlineDialogVisible" />
+    <OnlineTemplateDialog v-if="onlineDialogVisible" v-model="onlineDialogVisible" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, onMounted, ref } from 'vue'
-import TemplateDialog from '../components/templates/TemplateDialog.vue'
+import { computed, defineAsyncComponent, onActivated, ref } from 'vue'
 import TemplateHeader from '../components/templates/TemplateHeader.vue'
 import TemplateList from '../components/templates/TemplateList.vue'
-import OnlineTemplateDialog from '../components/OnlineTemplateDialog.vue'
-import { useAppsStore } from '../stores/apps'
 import { useConfigStore } from '../stores/config'
 import { useI18n } from '../utils/i18n'
 import { useLazyMessageBox } from '../utils/elementPlus'
 import { toast } from 'kernelsu-alt'
 import type { Template } from '../types'
 
+const TemplateDialog = defineAsyncComponent(
+  () => import('../components/templates/TemplateDialog.vue')
+)
+const OnlineTemplateDialog = defineAsyncComponent(
+  () => import('../components/OnlineTemplateDialog.vue')
+)
+
 const configStore = useConfigStore()
-const appsStore = useAppsStore()
 const { t, locale } = useI18n()
 const getMessageBox = useLazyMessageBox()
 
@@ -138,16 +142,9 @@ function handleTemplateSaved() {
   // 保存后无需额外动作，保留扩展点
 }
 
-onMounted(() => {
-  if (appsStore.installedApps.length === 0) {
-    appsStore.loadInstalledApps()
-  }
-})
-
 onActivated(() => {
   // KeepAlive 激活时触发一次尺寸计算，确保列表布局正确
   window.dispatchEvent(new Event('resize'))
-  window.dispatchEvent(new Event('scroll'))
 })
 </script>
 

@@ -1,48 +1,85 @@
 <template>
-  <div class="apps-page">
-    <AppFilters
-      v-model:search-query="searchQuery"
-      v-model:filter-type="filterType"
-      :total-count="allApps.length"
-      :configured-count="configuredCount"
-      :loading="loading"
+  <div
+    class="apps-page"
+    :class="{ 'apps-page--background-loading': backgroundLoading }"
+    :aria-busy="initialPageLoading || backgroundLoading ? 'true' : 'false'"
+  >
+    <template v-if="initialPageLoading">
+      <AppsPageSkeleton />
+    </template>
+
+    <template v-else>
+      <AppFilters
+        v-model:search-query="searchQuery"
+        v-model:filter-type="filterType"
+        v-model:show-system-apps="showSystemApps"
+        :total-count="visibleApps.length"
+        :configured-count="configuredCount"
+        :loading="false"
+      />
+
+      <AppList :apps="filteredApps" :empty-text="emptyText" :loading="false" @select="openConfig" />
+    </template>
+
+    <AppConfigDialog
+      v-if="configDialogVisible"
+      v-model="configDialogVisible"
+      :app="currentApp"
+      @saved="handleConfigSaved"
     />
-
-    <AppList :apps="filteredApps" :empty-text="emptyText" :loading="loading" @select="openConfig" />
-
-    <AppConfigDialog v-model="configDialogVisible" :app="currentApp" @saved="handleConfigSaved" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import AppConfigDialog from '../components/apps/AppConfigDialog.vue'
+import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
 import AppFilters from '../components/apps/AppFilters.vue'
 import AppList from '../components/apps/AppList.vue'
+import AppsPageSkeleton from '../components/apps/AppsPageSkeleton.vue'
 import { useAppsStore } from '../stores/apps'
 import { useConfigStore } from '../stores/config'
+import { useSettingsStore } from '../stores/settings'
 import { useI18n } from '../utils/i18n'
 import { normalizePackageName } from '../utils/package'
 import type { InstalledApp } from '../types'
 
 type FilterType = 'all' | 'configured'
 
+const AppConfigDialog = defineAsyncComponent(() => import('../components/apps/AppConfigDialog.vue'))
+
 const configStore = useConfigStore()
 const appsStore = useAppsStore()
+const settingsStore = useSettingsStore()
 const { t } = useI18n()
 
 const searchQuery = ref('')
 const filterType = ref<FilterType>('all')
 const configDialogVisible = ref(false)
 const currentApp = ref<InstalledApp | null>(null)
+const showSystemApps = computed({
+  get: () => settingsStore.showSystemApps,
+  set: (value: boolean) => settingsStore.setShowSystemApps(value),
+})
 
-// 根据 store 内容初始化加载状态
-// 如果没有应用，则假设需要加载，因此以加载状态开始
-// 防止出现空/部分内容的"闪烁"
-const isInitializing = ref(appsStore.installedApps.length === 0 && !appsStore.loading)
-
-const loading = computed(() => appsStore.loading || isInitializing.value)
+// 首次进入页面时先保留骨架，等第一批可展示列表准备好再收起
+const isInitializing = ref(!appsStore.hasLoadedUserApps && !appsStore.loading)
 const installedApps = computed(() => appsStore.installedApps)
+
+const configuredPackageNames = computed(() => {
+  const packages = new Set<string>()
+
+  for (const appConfig of configStore.getApps()) {
+    packages.add(appConfig.package)
+  }
+
+  for (const template of Object.values(configStore.getTemplates())) {
+    if (!template.packages) continue
+    for (const pkg of template.packages) {
+      packages.add(pkg)
+    }
+  }
+
+  return Array.from(packages)
+})
 
 const configuredApps = computed<InstalledApp[]>(() => {
   const map = new Map<string, InstalledApp>()
@@ -53,7 +90,6 @@ const configuredApps = computed<InstalledApp[]>(() => {
     map.set(appConfig.package, {
       packageName: appConfig.package,
       appName: appConfig.package,
-      installed: false,
     })
   }
 
@@ -66,7 +102,6 @@ const configuredApps = computed<InstalledApp[]>(() => {
       map.set(pkg, {
         packageName: pkg,
         appName: pkg,
-        installed: false,
       })
     }
   }
@@ -110,8 +145,8 @@ const allApps = computed<InstalledApp[]>(() => {
       ...(existingIdx !== undefined ? result[existingIdx] : {}),
       packageName: app.packageName,
       appName: existingIdx !== undefined ? result[existingIdx].appName : app.packageName,
-      installed:
-        existingIdx !== undefined ? result[existingIdx].installed : (app.installed ?? false),
+      installed: existingIdx !== undefined ? result[existingIdx].installed : app.installed,
+      isSystem: existingIdx !== undefined ? result[existingIdx].isSystem : app.isSystem,
     }
 
     const idx = result.length
@@ -122,12 +157,27 @@ const allApps = computed<InstalledApp[]>(() => {
   return result
 })
 
+const visibleApps = computed(() =>
+  allApps.value.filter(
+    (app) =>
+      showSystemApps.value ||
+      app.isSystem !== true ||
+      configStore.isPackageConfigured(app.packageName)
+  )
+)
+
+const hasRenderableApps = computed(() => visibleApps.value.length > 0)
+const initialPageLoading = computed(
+  () => !hasRenderableApps.value && (isInitializing.value || appsStore.loading)
+)
+const backgroundLoading = computed(() => appsStore.loading && !initialPageLoading.value)
+
 const configuredCount = computed(
-  () => allApps.value.filter((app) => configStore.isPackageConfigured(app.packageName)).length
+  () => visibleApps.value.filter((app) => configStore.isPackageConfigured(app.packageName)).length
 )
 
 const filteredApps = computed(() => {
-  let apps = allApps.value
+  let apps = visibleApps.value
 
   if (searchQuery.value) {
     const q = searchQuery.value.toLowerCase()
@@ -164,17 +214,45 @@ function handleConfigSaved() {
   // 预留钩子，未来可在保存后刷新列表或提示
 }
 
+async function loadApps(includeSystem: boolean) {
+  await appsStore.loadInstalledApps({
+    includeSystem,
+    resolvePackages: configuredPackageNames.value,
+  })
+  isInitializing.value = false
+}
+
 onMounted(async () => {
-  if (appsStore.installedApps.length === 0 && !appsStore.loading) {
-    // 延迟到下一帧再加载，先完成页面切换体验
-    requestAnimationFrame(async () => {
-      await appsStore.loadInstalledApps()
-      isInitializing.value = false
+  if (!appsStore.hasLoadedUserApps && !appsStore.loading) {
+    requestAnimationFrame(() => {
+      void loadApps(showSystemApps.value)
     })
   } else {
     isInitializing.value = false
+    await appsStore.resolvePackagesInfo(configuredPackageNames.value)
+    if (showSystemApps.value) {
+      await appsStore.loadInstalledApps({ includeSystem: true })
+    }
   }
 })
+
+watch(showSystemApps, (enabled, previous) => {
+  if (enabled && enabled !== previous) {
+    void appsStore.loadInstalledApps({
+      includeSystem: true,
+      resolvePackages: configuredPackageNames.value,
+    })
+  }
+})
+
+watch(
+  configuredPackageNames,
+  (packages) => {
+    if (!packages.length) return
+    void appsStore.resolvePackagesInfo(packages)
+  },
+  { deep: false }
+)
 </script>
 
 <style scoped>

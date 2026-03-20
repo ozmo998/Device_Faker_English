@@ -10,9 +10,13 @@
 
     <!-- 主内容区域 -->
     <main class="main-content">
-      <KeepAlive>
-        <component :is="currentPageComponent" :key="currentPage" />
-      </KeepAlive>
+      <div class="page-stage">
+        <Transition name="page-switch">
+          <KeepAlive>
+            <component :is="currentPageComponent" :key="displayedPage" class="page-view" />
+          </KeepAlive>
+        </Transition>
+      </div>
     </main>
 
     <!-- 底部导航栏 -->
@@ -20,7 +24,7 @@
       <button
         v-for="page in pages"
         :key="page.id"
-        :class="['nav-item', { active: currentPage === page.id }]"
+        :class="['nav-item', { active: activePage === page.id }]"
         @click.stop="handlePageChange(page.id)"
       >
         <component :is="page.icon" :size="24" />
@@ -31,8 +35,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watchEffect, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watchEffect } from 'vue'
 import { Home, FileText, Smartphone, Settings } from 'lucide-vue-next'
+import AppsPageSkeleton from './components/apps/AppsPageSkeleton.vue'
+import { useAppsStore } from './stores/apps'
 import { useConfigStore } from './stores/config'
 import { useSettingsStore } from './stores/settings'
 import { useI18n } from './utils/i18n'
@@ -42,56 +48,97 @@ import AppsPage from './pages/AppsPage.vue'
 import SettingsPage from './pages/SettingsPage.vue'
 
 const configStore = useConfigStore()
+const appsStore = useAppsStore()
 const settingsStore = useSettingsStore()
 
-const currentPage = ref('home')
+const activePage = ref('home')
+const displayedPage = ref('home')
 let lastClickTime = 0
 let isChangingPage = false
+let appsBootstrapToken = 0
 
 // 滚动条宽度补偿机制
 const scrollbarWidth = ref(0)
 
+function getMainContentElement() {
+  return document.querySelector('.main-content') as HTMLElement | null
+}
+
+function resetMainContentScroll() {
+  const mainContent = getMainContentElement()
+  if (!mainContent) return
+
+  const previousBehavior = mainContent.style.scrollBehavior
+  mainContent.style.scrollBehavior = 'auto'
+  mainContent.scrollTop = 0
+  mainContent.scrollLeft = 0
+  mainContent.style.scrollBehavior = previousBehavior
+}
+
+function lockMainContentDuringTemplateEntry() {
+  const mainContent = getMainContentElement()
+  if (!mainContent) return
+
+  mainContent.classList.add('main-content--template-enter-lock')
+}
+
+function unlockMainContentDuringTemplateEntry() {
+  const mainContent = getMainContentElement()
+  if (!mainContent) return
+
+  mainContent.classList.remove('main-content--template-enter-lock')
+}
+
+function stabilizeTemplateEntryFromHome() {
+  lockMainContentDuringTemplateEntry()
+  resetMainContentScroll()
+
+  requestAnimationFrame(() => {
+    resetMainContentScroll()
+    requestAnimationFrame(() => {
+      resetMainContentScroll()
+      unlockMainContentDuringTemplateEntry()
+    })
+  })
+}
+
 // 处理页面切换，防止重复点击和事件冲突
 function handlePageChange(pageId: string) {
   const now = Date.now()
+  const previousPage = activePage.value
 
-  // 如果正在切换页面，忽略
-  if (isChangingPage) {
-    return
-  }
-
-  // 防抖：50ms 内只响应一次点击
-  if (now - lastClickTime < 50) {
+  if (isChangingPage || now - lastClickTime < 50 || previousPage === pageId) {
     return
   }
 
   lastClickTime = now
+  isChangingPage = true
+  activePage.value = pageId
+  const isTemplateFromHome = previousPage === 'home' && pageId === 'templates'
 
-  if (currentPage.value !== pageId) {
-    isChangingPage = true
+  if (isTemplateFromHome) {
+    stabilizeTemplateEntryFromHome()
+  }
 
-    // 使用 requestAnimationFrame 确保在下一帧切换，避免阻塞
+  if (pageId === 'apps' && !appsStore.hasLoadedUserApps) {
+    const token = ++appsBootstrapToken
+    displayedPage.value = 'apps-skeleton'
+    void appsStore.loadInstalledApps({ includeSystem: settingsStore.showSystemApps })
     requestAnimationFrame(() => {
-      currentPage.value = pageId
-
-      nextTick(() => {
-        // 触发布局更新，确保元素适应新宽度
-        const mainContent = document.querySelector('.main-content') as HTMLElement
-        if (mainContent) {
-          // 触发重排
-          void mainContent.offsetHeight
+      requestAnimationFrame(() => {
+        if (activePage.value !== 'apps' || token !== appsBootstrapToken) {
+          return
         }
-
-        // 触发窗口 resize 事件，确保全局布局更新
-        window.dispatchEvent(new Event('resize'))
-
-        // 重置标志
-        setTimeout(() => {
-          isChangingPage = false
-        }, 50)
+        displayedPage.value = 'apps'
       })
     })
+  } else {
+    displayedPage.value = pageId
   }
+
+  window.setTimeout(() => {
+    isChangingPage = false
+  }, 220)
 }
 const version = computed(() => configStore.moduleVersion)
 const isDark = computed(() => {
@@ -111,7 +158,11 @@ const pages = computed(() => [
 ])
 
 const currentPageComponent = computed(() => {
-  return pages.value.find((p) => p.id === currentPage.value)?.component || StatusPage
+  if (displayedPage.value === 'apps-skeleton') {
+    return AppsPageSkeleton
+  }
+
+  return pages.value.find((p) => p.id === displayedPage.value)?.component || StatusPage
 })
 
 // 应用深色模式到 html 元素（Element Plus 需要）
@@ -304,6 +355,53 @@ onUnmounted(() => {
   scroll-behavior: smooth;
   /* 确保Android WebView正确处理触摸滚动 */
   touch-action: pan-y;
+}
+
+.page-stage {
+  position: relative;
+  min-height: 100%;
+}
+
+.main-content--template-enter-lock {
+  overflow: hidden;
+}
+
+.page-view {
+  min-height: 100%;
+  width: 100%;
+}
+
+.page-switch-enter-active {
+  position: relative;
+  z-index: 2;
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+  will-change: opacity, transform;
+}
+
+.page-switch-leave-active {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  z-index: 1;
+  pointer-events: none;
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+  will-change: opacity, transform;
+}
+
+.page-switch-enter-from,
+.page-switch-leave-to {
+  opacity: 0;
+  transform: translateY(12px);
+}
+
+.page-switch-enter-to,
+.page-switch-leave-from {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .bottom-nav {
