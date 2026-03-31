@@ -129,6 +129,12 @@
         </el-form-item>
         <el-collapse>
           <el-collapse-item :title="t('templates.fields.system')" name="system">
+            <el-form-item :label="t('templates.fields.build_id')">
+              <el-input
+                v-model="customFormData.build_id"
+                :placeholder="t('templates.placeholders.build_id')"
+              />
+            </el-form-item>
             <el-form-item :label="t('templates.fields.android_version')">
               <el-input
                 v-model="customFormData.android_version"
@@ -253,6 +259,7 @@ const customFormData = ref({
   name: '',
   marketname: '',
   fingerprint: '',
+  build_id: '',
   android_version: '',
   sdk_int: '',
   characteristics: '',
@@ -277,6 +284,7 @@ const templateOptions = computed<TemplateOption[]>(() => {
       template.brand,
       template.model,
       template.marketname,
+      template.build_id,
       template.device,
       template.product,
     ]
@@ -351,6 +359,7 @@ function syncFromExistingConfig() {
       name: appConfig.name || '',
       marketname: appConfig.marketname || '',
       fingerprint: appConfig.fingerprint || '',
+      build_id: appConfig.build_id || '',
       android_version: appConfig.android_version || '',
       sdk_int: appConfig.sdk_int ? String(appConfig.sdk_int) : '',
       characteristics: appConfig.characteristics || '',
@@ -406,6 +415,7 @@ function resetCustomFormData() {
     name: '',
     marketname: '',
     fingerprint: '',
+    build_id: '',
     android_version: '',
     sdk_int: '',
     characteristics: '',
@@ -518,6 +528,7 @@ async function saveAppConfig() {
       name: customFormData.value.name,
       marketname: customFormData.value.marketname,
       fingerprint: customFormData.value.fingerprint,
+      build_id: customFormData.value.build_id,
       android_version: customFormData.value.android_version,
       sdk_int: customFormData.value.sdk_int ? Number(customFormData.value.sdk_int) : undefined,
       characteristics: customFormData.value.characteristics,

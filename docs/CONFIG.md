@@ -80,6 +80,7 @@ brand = "nubia"
 model = "NX769J"
 device = "REDMAGIC 9 Pro"
 fingerprint = "nubia/NX769J/NX769J:14/UKQ1.230917.001/20240813.173312:user/release-keys"
+build_id = "UKQ1.230917.001"
 
 [templates.pixel_xl]
 packages = [
@@ -91,6 +92,7 @@ model = "marlin"
 device = "Pixel XL"
 product = "marlin"
 fingerprint = "google/marlin/marlin:10/QP1A.191005.007.A3/5972272:user/release-keys"
+build_id = "QP1A.191005.007.A3"
 
 # 无需写 [[apps]]，所有包名自动使用该模板
 ```
@@ -165,6 +167,7 @@ model = "SM-S9280"
 | `device` | `Build.DEVICE` | (仅 Build 字段) | 代号 (如: xuanyuan，NX769J) |
 | `product` | `Build.PRODUCT` | (仅 Build 字段) | 代号 (如: xuanyuan，NX769J) |
 | `fingerprint` | `Build.FINGERPRINT` | + `ro.build.fingerprint` | 指纹 |
+| `build_id` | `Build.ID` | + `ro.build.id` 等 | Build ID (如: UKQ1.230917.001) |
 | `name` | ❌ | `ro.product.name` + `ro.product.device` | 代号 (如: xuanyuan) |
 | `marketname` | ❌ | `ro.product.marketname` | 型号 (如: REDMI K90 Pro Max) |
 | `characteristics` | ❌ | `ro.build.characteristics` | 特性 (如: tablet) - 仅 full 模式生效 |
@@ -173,13 +176,13 @@ model = "SM-S9280"
 | `custom_props` | ❌ | ✅ | 自定义属性映射表 |
 | `force_denylist_unmount` | N/A | N/A | 是否对该应用强制卸载模块挂载点；未指定时使用 `default_force_denylist_unmount` |
 
-**Android 版本伪装字段**（新增）:
+**Android 版本伪装字段**:
 | 字段 | 说明 | 示例 |
 |------|------|------|
 | `android_version` | Android 版本号，所有模式都支持 | `"15"`, `"14"`, `"13"` |
 | `sdk_int` | SDK 版本号，所有模式都支持 | `35`, `34`, `33` |
 
-**自定义属性字段**（新增）:
+**自定义属性字段**:
 | 字段 | 说明 |
 |------|------|
 | `custom_props` | 自定义属性映射表，仅 full/resetprop 模式支持 |
@@ -204,12 +207,19 @@ model = "SM-S9280"
 - `name` 和 `marketname` 仅在 **full 模式**下有效(影响 SystemProperties)
 - `name` 字段在 full 模式下会同时伪装 `ro.product.name` 和 `ro.product.device`
 - `characteristics` 字段仅在 **full 模式**下生效
-- `android_version` 和 `sdk_int` 在**所有模式**下都生效
-- **lite 模式**下,只有 `manufacturer`、`brand`、`model`、`device`、`product`、`fingerprint`、`android_version`、`sdk_int` 生效
+- **lite 模式**下,只有 `manufacturer`、`brand`、`model`、`device`、`product`、`fingerprint`、`build_id`、`android_version`、`sdk_int` 生效
 
-## Android 版本伪装（新增功能）
+## Build ID 伪装
 
-所有模式都支持 Android 版本和 SDK 版本伪装：
+**Build ID 会修改的属性**：
+
+| 模式 | Build 字段 | 系统属性 |
+|------|-----------|----------|
+| lite | `ID` | ❌ |
+| full | `ID` | `ro.build.id`, `ro.system.build.id`, `ro.vendor.build.id`, `ro.product.build.id` |
+| resetprop | `ID` | `ro.build.id`, `ro.system.build.id`, `ro.vendor.build.id`, `ro.product.build.id` |
+
+## Android 版本伪装
 
 ```toml
 # 模板示例：伪装为 Android 15
@@ -247,7 +257,7 @@ sdk_int = 33
 - `ro.vendor.build.version.sdk`
 - `ro.product.build.version.sdk`
 
-## 自定义属性（新增功能）
+## 自定义属性
 
 **full/resetprop 模式** 都支持自定义属性，可以设置任意系统属性：
 

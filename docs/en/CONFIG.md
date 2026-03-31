@@ -80,6 +80,7 @@ brand = "nubia"
 model = "NX769J"
 device = "REDMAGIC 9 Pro"
 fingerprint = "nubia/NX769J/NX769J:14/UKQ1.230917.001/20240813.173312:user/release-keys"
+build_id = "UKQ1.230917.001"
 
 [templates.pixel_xl]
 packages = [
@@ -91,6 +92,7 @@ model = "marlin"
 device = "Pixel XL"
 product = "marlin"
 fingerprint = "google/marlin/marlin:10/QP1A.191005.007.A3/5972272:user/release-keys"
+build_id = "QP1A.191005.007.A3"
 
 # No need to write [[apps]], all package names automatically use this template
 ```
@@ -165,6 +167,7 @@ model = "SM-S9280"
 | `device` | `Build.DEVICE` | (Build fields only) | Codename (e.g., xuanyuan, NX769J) |
 | `product` | `Build.PRODUCT` | (Build fields only) | Codename (e.g., xuanyuan, NX769J) |
 | `fingerprint` | `Build.FINGERPRINT` | + `ro.build.fingerprint` | Fingerprint |
+| `build_id` | `Build.ID` | + `ro.build.id` etc. | Build ID (e.g., UKQ1.230917.001) |
 | `name` | ❌ | `ro.product.name` + `ro.product.device` | Codename (e.g., xuanyuan) |
 | `marketname` | ❌ | `ro.product.marketname` | Marketing Name (e.g., REDMI K90 Pro Max) |
 | `characteristics` | ❌ | `ro.build.characteristics` | Characteristics (e.g., tablet) - Full mode only |
@@ -173,13 +176,13 @@ model = "SM-S9280"
 | `custom_props` | ❌ | ✅ | Custom property mapping table |
 | `force_denylist_unmount` | N/A | N/A | Whether to forcibly unmount module mount points for this app; uses `default_force_denylist_unmount` if not specified |
 
-**Android Version Spoofing Fields** (New):
+**Android Version Spoofing Fields**:
 | Field | Description | Example |
 |------|------|------|
 | `android_version` | Android version number, supported by all modes | `"15"`, `"14"`, `"13"` |
 | `sdk_int` | SDK version number, supported by all modes | `35`, `34`, `33` |
 
-**Custom Properties Fields** (New):
+**Custom Properties Fields**:
 | Field | Description |
 |------|------|
 | `custom_props` | Custom property mapping table, full/resetprop modes only |
@@ -205,11 +208,19 @@ model = "SM-S9280"
 - `name` field spoofs both `ro.product.name` and `ro.product.device` in full mode
 - `characteristics` field only takes effect in **full mode**
 - `android_version` and `sdk_int` take effect in **all modes**
-- In **lite mode**, only `manufacturer`, `brand`, `model`, `device`, `product`, `fingerprint`, `android_version`, `sdk_int` take effect
+- In **lite mode**, only `manufacturer`, `brand`, `model`, `device`, `product`, `fingerprint`, `build_id`, `android_version`, `sdk_int` take effect
 
-## Android Version Spoofing (New Feature)
+## Build ID Spoofing
 
-All modes support Android version and SDK version spoofing:
+**Properties Modified by Build ID Spoofing**:
+
+| Mode | Build Field | System Properties |
+|------|------------|-------------------|
+| lite | `ID` | ❌ |
+| full | `ID` | `ro.build.id`, `ro.system.build.id`, `ro.vendor.build.id`, `ro.product.build.id` |
+| resetprop | `ID` | `ro.build.id`, `ro.system.build.id`, `ro.vendor.build.id`, `ro.product.build.id` |
+
+## Android Version Spoofing
 
 ```toml
 # Template example: Spoof as Android 15
@@ -247,7 +258,7 @@ sdk_int = 33
 - `ro.vendor.build.version.sdk`
 - `ro.product.build.version.sdk`
 
-## Custom Properties (New Feature)
+## Custom Properties
 
 **full/resetprop modes** both support custom properties, allowing setting any system property:
 

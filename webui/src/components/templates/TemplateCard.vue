@@ -40,6 +40,10 @@
           }}
         </span>
       </div>
+      <div v-if="template.build_id" class="detail-item">
+        <span class="detail-label">{{ t('templates.fields.build_id') }}:</span>
+        <span class="detail-value">{{ template.build_id }}</span>
+      </div>
       <div v-if="template.characteristics" class="detail-item">
         <span class="detail-label">{{ t('templates.fields.characteristics') }}:</span>
         <span class="detail-value">{{ template.characteristics }}</span>

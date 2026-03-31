@@ -98,6 +98,9 @@ function normalizeDeviceInfoFields(source: UnknownRecord): Partial<DeviceInfo> {
   const fingerprint = asOptionalString(source.fingerprint)
   if (fingerprint !== undefined) normalized.fingerprint = fingerprint
 
+  const buildId = asOptionalString(source.build_id)
+  if (buildId !== undefined) normalized.build_id = buildId
+
   const characteristics = asOptionalString(source.characteristics)
   if (characteristics !== undefined) normalized.characteristics = characteristics
 

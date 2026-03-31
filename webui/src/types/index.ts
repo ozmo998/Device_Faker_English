@@ -19,6 +19,7 @@ export interface DeviceInfo {
   name?: string
   marketname?: string
   fingerprint?: string
+  build_id?: string
   characteristics?: string
   android_version?: string
   sdk_int?: number

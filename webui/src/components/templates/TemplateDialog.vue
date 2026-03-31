@@ -67,6 +67,13 @@
 
       <el-collapse>
         <el-collapse-item :title="t('templates.fields.system')" name="system">
+          <el-form-item :label="t('templates.fields.build_id')">
+            <el-input
+              v-model="formData.build_id"
+              :placeholder="t('templates.placeholders.build_id')"
+            />
+          </el-form-item>
+
           <el-form-item :label="t('templates.fields.android_version')">
             <el-input
               v-model="formData.android_version"
@@ -204,6 +211,7 @@ const formData = ref({
   name_field: '',
   marketname: '',
   fingerprint: '',
+  build_id: '',
   android_version: '',
   sdk_int: '',
   characteristics: '',
@@ -224,6 +232,7 @@ function resetForm() {
     name_field: '',
     marketname: '',
     fingerprint: '',
+    build_id: '',
     android_version: '',
     sdk_int: '',
     characteristics: '',
@@ -250,6 +259,7 @@ function fillFormFromTemplate() {
     name_field: props.templateData.name || '',
     marketname: props.templateData.marketname || '',
     fingerprint: props.templateData.fingerprint || '',
+    build_id: props.templateData.build_id || '',
     android_version: props.templateData.android_version || '',
     sdk_int: props.templateData.sdk_int ? String(props.templateData.sdk_int) : '',
     characteristics: props.templateData.characteristics || '',
@@ -320,6 +330,12 @@ async function saveTemplate() {
     template.android_version = formData.value.android_version
   } else {
     delete template.android_version
+  }
+
+  if (formData.value.build_id) {
+    template.build_id = formData.value.build_id
+  } else {
+    delete template.build_id
   }
 
   if (formData.value.sdk_int) {

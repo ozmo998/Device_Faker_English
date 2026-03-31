@@ -71,6 +71,7 @@ const filteredTemplates = computed(() => {
         name,
         template.brand || '',
         template.model || '',
+        template.build_id || '',
         template.device || '',
         template.manufacturer || '',
         template.product || '',

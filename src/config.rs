@@ -27,6 +27,8 @@ pub struct DeviceTemplate {
     #[serde(default)]
     pub fingerprint: Option<String>,
     #[serde(default)]
+    pub build_id: Option<String>,
+    #[serde(default)]
     pub characteristics: Option<String>,
     /// Android 版本伪装（如 "15", "14"）
     #[serde(default)]
@@ -65,6 +67,8 @@ pub struct AppConfig {
     pub product: Option<String>,
     #[serde(default)]
     pub fingerprint: Option<String>,
+    #[serde(default)]
+    pub build_id: Option<String>,
     #[serde(default)]
     pub characteristics: Option<String>,
     /// Android 版本伪装（如 "15", "14"）
@@ -140,6 +144,7 @@ impl Config {
                 device: app.device.clone(),
                 product: app.product.clone(),
                 fingerprint: app.fingerprint.clone(),
+                build_id: app.build_id.clone(),
                 characteristics: app.characteristics.clone(),
                 android_version: app.android_version.clone(),
                 sdk_int: app.sdk_int,
@@ -165,6 +170,7 @@ impl Config {
                 device: template.device.clone(),
                 product: template.product.clone(),
                 fingerprint: template.fingerprint.clone(),
+                build_id: template.build_id.clone(),
                 characteristics: template.characteristics.clone(),
                 android_version: template.android_version.clone(),
                 sdk_int: template.sdk_int,
@@ -229,6 +235,15 @@ impl Config {
             && !fingerprint.is_empty()
         {
             map.insert("ro.build.fingerprint".to_string(), fingerprint.clone());
+        }
+
+        if let Some(build_id) = &merged.build_id
+            && !build_id.is_empty()
+        {
+            map.insert("ro.build.id".to_string(), build_id.clone());
+            map.insert("ro.system.build.id".to_string(), build_id.clone());
+            map.insert("ro.vendor.build.id".to_string(), build_id.clone());
+            map.insert("ro.product.build.id".to_string(), build_id.clone());
         }
 
         if let Some(characteristics) = &merged.characteristics
@@ -325,6 +340,12 @@ impl Config {
         {
             delete_props.push("ro.build.fingerprint".to_string());
         }
+        if merged.build_id.as_ref().is_some_and(|s| s == "__DELETE__") {
+            delete_props.push("ro.build.id".to_string());
+            delete_props.push("ro.system.build.id".to_string());
+            delete_props.push("ro.vendor.build.id".to_string());
+            delete_props.push("ro.product.build.id".to_string());
+        }
         if merged
             .characteristics
             .as_ref()
@@ -363,10 +384,79 @@ pub struct MergedAppConfig {
     pub device: Option<String>,
     pub product: Option<String>,
     pub fingerprint: Option<String>,
+    pub build_id: Option<String>,
     pub characteristics: Option<String>,
     pub android_version: Option<String>,
     pub sdk_int: Option<u32>,
     pub custom_props: Option<HashMap<String, String>>,
     pub force_denylist_unmount: bool,
     pub mode: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Config;
+
+    #[test]
+    fn merged_config_includes_build_id_from_app_or_template() {
+        let config = Config::from_toml(
+            r#"
+[templates.pixel]
+packages = ["com.example.template"]
+build_id = "UP1A.231005.007"
+
+[[apps]]
+package = "com.example.app"
+build_id = "UKQ1.230917.001"
+"#,
+        )
+        .unwrap();
+
+        let app_merged = config.get_merged_config("com.example.app").unwrap();
+        assert_eq!(app_merged.build_id.as_deref(), Some("UKQ1.230917.001"));
+
+        let template_merged = config.get_merged_config("com.example.template").unwrap();
+        assert_eq!(template_merged.build_id.as_deref(), Some("UP1A.231005.007"));
+    }
+
+    #[test]
+    fn property_map_and_delete_list_handle_build_id() {
+        let config = Config::from_toml(
+            r#"
+[[apps]]
+package = "com.example.app"
+build_id = "UKQ1.230917.001"
+
+[[apps]]
+package = "com.example.delete"
+build_id = "__DELETE__"
+"#,
+        )
+        .unwrap();
+
+        let merged = config.get_merged_config("com.example.app").unwrap();
+        let prop_map = Config::build_merged_property_map(&merged);
+        for key in [
+            "ro.build.id",
+            "ro.system.build.id",
+            "ro.vendor.build.id",
+            "ro.product.build.id",
+        ] {
+            assert_eq!(
+                prop_map.get(key).map(String::as_str),
+                Some("UKQ1.230917.001")
+            );
+        }
+
+        let delete_merged = config.get_merged_config("com.example.delete").unwrap();
+        let delete_props = Config::build_delete_props_list(&delete_merged);
+        for key in [
+            "ro.build.id",
+            "ro.system.build.id",
+            "ro.vendor.build.id",
+            "ro.product.build.id",
+        ] {
+            assert!(delete_props.iter().any(|prop| prop == key));
+        }
+    }
 }

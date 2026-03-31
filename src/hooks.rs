@@ -68,6 +68,13 @@ pub fn hook_build_fields(
                 .map_err(|_e| jni::errors::Error::JniCall(jni::errors::JniError::Unknown))?;
         }
 
+        if let Some(build_id) = &merged_config.build_id
+            && !build_id.is_empty()
+        {
+            set_build_field(jenv, &build_class, jni_str!("ID"), build_id)
+                .map_err(|_e| jni::errors::Error::JniCall(jni::errors::JniError::Unknown))?;
+        }
+
         hook_version_fields(jenv, &build_class, merged_config)
             .map_err(|_e| jni::errors::Error::JniCall(jni::errors::JniError::Unknown))?;
 
@@ -189,9 +196,10 @@ pub unsafe extern "C" fn native_get_hook(
         let fake_props = FAKE_PROPS.lock().unwrap();
         if let Some(props) = fake_props.as_ref()
             && let Some(fake_value) = props.get(&key_string)
-                && let Ok(new_string) = jenv.new_string(fake_value) {
-                    return Ok(new_string.into_raw());
-                }
+            && let Ok(new_string) = jenv.new_string(fake_value)
+        {
+            return Ok(new_string.into_raw());
+        }
 
         let original_native_get = ORIGINAL_NATIVE_GET.lock().unwrap();
         if let Some(orig_fn) = *original_native_get {

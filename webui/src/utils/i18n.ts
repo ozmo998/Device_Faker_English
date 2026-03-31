@@ -77,6 +77,7 @@ export const messages = {
         name_field: 'Name (可选，仅 full 模式)',
         market_name: 'Market Name (可选，仅 full 模式)',
         fingerprint: 'Fingerprint',
+        build_id: 'Build ID',
         android_version: 'Android 版本',
         sdk_int: 'SDK 版本',
         characteristics: 'Characteristics (可选，仅 full 模式)',
@@ -96,6 +97,7 @@ export const messages = {
         market_name: '例如：REDMAGIC 9 Pro',
         fingerprint:
           '例如：nubia/NX769J/NX769J:14/UKQ1.230917.001/20240813.173312:user/release-keys',
+        build_id: '例如：UKQ1.230917.001',
         android_version: '例如：16, 15, 14',
         sdk_int: '例如：36, 35, 34',
         characteristics: '例如：tablet (仅 full 模式)',
@@ -394,6 +396,7 @@ export const messages = {
         name_field: 'Name (Optional, full mode only)',
         market_name: 'Market Name (Optional, full mode only)',
         fingerprint: 'Fingerprint',
+        build_id: 'Build ID',
         android_version: 'Android Version',
         sdk_int: 'SDK Version',
         characteristics: 'Characteristics (Optional, full mode only)',
@@ -413,6 +416,7 @@ export const messages = {
         market_name: 'e.g. REDMAGIC 9 Pro',
         fingerprint:
           'e.g. nubia/NX769J/NX769J:14/UKQ1.230917.001/20240813.173312:user/release-keys',
+        build_id: 'e.g. UKQ1.230917.001',
         android_version: 'e.g. 16, 15, 14',
         sdk_int: 'e.g. 36, 35, 34',
         characteristics: 'e.g. tablet (full mode only)',
