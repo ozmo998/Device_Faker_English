@@ -131,6 +131,7 @@
 </template>
 
 <script setup lang="ts">
+import { layout, prepare } from '@chenglou/pretext'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { AlertTriangle, Download, LoaderCircle, RefreshCw } from 'lucide-vue-next'
 import type { OnlineTemplateDetail, OnlineTemplateRecord, OnlineTemplateLoadState } from '../types'
@@ -138,6 +139,38 @@ import { useI18n } from '../utils/i18n'
 
 const DEFAULT_OVERSCAN = 5
 const ROW_GAP = 12
+const MOBILE_BREAKPOINT = 640
+const DEFAULT_LAYOUT_WIDTH = 360
+const VIRTUAL_LIST_PADDING_RIGHT = 4
+const CARD_HORIZONTAL_PADDING = 32
+const CARD_VERTICAL_PADDING = 32
+const CARD_SECTION_GAP = 14
+const HEADER_TOP_GAP = 12
+const SUBTITLE_MARGIN_TOP = 5.6
+const STATUS_PILL_MIN_WIDTH = 96
+const STATUS_PILL_HEIGHT = 28
+const META_PANEL_HORIZONTAL_PADDING = 28.8
+const META_PANEL_VERTICAL_PADDING = 25.6
+const META_PANEL_BORDER_WIDTH = 1
+const META_PANEL_SECTION_GAP = 10.4
+const DETAIL_LABEL_LINE_HEIGHT = 16
+const DETAIL_LABEL_MARGIN_BOTTOM = 4.48
+const META_ROW_HEIGHT = 24.96
+const DESKTOP_ACTION_HEIGHT = 44
+const MOBILE_ACTION_HEIGHT = 52
+const LOADING_BODY_HEIGHT = 92
+const ERROR_BODY_HEIGHT = 92
+const APP_FONT_FAMILY = '"Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+const TITLE_FONT = `700 16px ${APP_FONT_FAMILY}`
+const TITLE_LINE_HEIGHT = 24
+const SUMMARY_FONT = `400 13.12px ${APP_FONT_FAMILY}`
+const SUMMARY_LINE_HEIGHT = 13.12 * 1.45
+const SUMMARY_MAX_LINES = 2
+const AUTHOR_FONT = `600 13.44px ${APP_FONT_FAMILY}`
+const AUTHOR_LINE_HEIGHT = 13.44 * 1.45
+const DESCRIPTION_FONT = `400 12.96px ${APP_FONT_FAMILY}`
+const DESCRIPTION_LINE_HEIGHT = 12.96 * 1.45
+const preparedTextCache = new Map<string, ReturnType<typeof prepare>>()
 
 const props = defineProps<{
   items: OnlineTemplateRecord[]
@@ -160,14 +193,115 @@ let cleanupResizeObserver: (() => void) | null = null
 
 const overscan = computed(() => props.overscan ?? DEFAULT_OVERSCAN)
 
-function estimateLineCount(text: string, charsPerLine: number, clamp?: number) {
-  const trimmed = text.trim()
-  if (!trimmed) {
+type WhiteSpaceMode = 'normal' | 'pre-wrap'
+
+type MeasureTextOptions = {
+  text: string
+  font: string
+  maxWidth: number
+  lineHeight: number
+  clamp?: number
+  whiteSpace?: WhiteSpaceMode
+}
+
+function getPreparedText(text: string, font: string, whiteSpace: WhiteSpaceMode) {
+  const cacheKey = `${font}::${whiteSpace}::${text}`
+  const cached = preparedTextCache.get(cacheKey)
+
+  if (cached) {
+    return cached
+  }
+
+  const prepared = prepare(text, font, { whiteSpace })
+  preparedTextCache.set(cacheKey, prepared)
+  return prepared
+}
+
+function measureWrappedTextHeight({
+  text,
+  font,
+  maxWidth,
+  lineHeight,
+  clamp,
+  whiteSpace = 'normal',
+}: MeasureTextOptions) {
+  if (!text.trim()) {
     return 0
   }
 
-  const lines = Math.max(1, Math.ceil(trimmed.length / charsPerLine))
-  return clamp ? Math.min(lines, clamp) : lines
+  const prepared = getPreparedText(text, font, whiteSpace)
+  const { lineCount } = layout(prepared, Math.max(1, maxWidth), lineHeight)
+
+  if (lineCount === 0) {
+    return 0
+  }
+
+  const effectiveLineCount = clamp ? Math.min(lineCount, clamp) : lineCount
+  return effectiveLineCount * lineHeight
+}
+
+function getViewportLayoutWidth() {
+  return viewportWidth.value > 0 ? viewportWidth.value : DEFAULT_LAYOUT_WIDTH
+}
+
+function getCardContentWidth() {
+  const viewportLayoutWidth = getViewportLayoutWidth()
+  return Math.max(1, viewportLayoutWidth - VIRTUAL_LIST_PADDING_RIGHT - CARD_HORIZONTAL_PADDING)
+}
+
+function getMetaTextWidth() {
+  return Math.max(
+    1,
+    getCardContentWidth() - META_PANEL_HORIZONTAL_PADDING - META_PANEL_BORDER_WIDTH * 2
+  )
+}
+
+function estimateMetaPanelHeight(detail: OnlineTemplateDetail) {
+  const meta = detail.meta
+  const sections: number[] = []
+  const metaTextWidth = getMetaTextWidth()
+
+  if (meta?.author?.trim()) {
+    sections.push(
+      DETAIL_LABEL_LINE_HEIGHT +
+        DETAIL_LABEL_MARGIN_BOTTOM +
+        measureWrappedTextHeight({
+          text: meta.author,
+          font: AUTHOR_FONT,
+          maxWidth: metaTextWidth,
+          lineHeight: AUTHOR_LINE_HEIGHT,
+        })
+    )
+  }
+
+  if (meta?.description?.trim()) {
+    sections.push(
+      DETAIL_LABEL_LINE_HEIGHT +
+        DETAIL_LABEL_MARGIN_BOTTOM +
+        measureWrappedTextHeight({
+          text: meta.description,
+          font: DESCRIPTION_FONT,
+          maxWidth: metaTextWidth,
+          lineHeight: DESCRIPTION_LINE_HEIGHT,
+          whiteSpace: 'pre-wrap',
+        })
+    )
+  }
+
+  if (meta?.version || meta?.version_code) {
+    sections.push(META_ROW_HEIGHT)
+  }
+
+  if (sections.length === 0) {
+    return 0
+  }
+
+  return (
+    META_PANEL_VERTICAL_PADDING * 2 +
+    META_PANEL_BORDER_WIDTH * 2 +
+    sections.reduce((total, sectionHeight) => total + sectionHeight, 0) +
+    META_PANEL_SECTION_GAP * (sections.length - 1)
+  )
 }
 
 function estimateCardHeight(item: OnlineTemplateRecord) {
@@ -175,47 +309,39 @@ function estimateCardHeight(item: OnlineTemplateRecord) {
     return props.itemHeight
   }
 
-  const isMobile = viewportWidth.value <= 640
-  const titleLines = estimateLineCount(item.displayName, isMobile ? 20 : 28, 2)
-  const headerTitleHeight = titleLines * 24
-  const subtitleHeight = 20
+  const isMobile = getViewportLayoutWidth() <= MOBILE_BREAKPOINT
+  const cardContentWidth = getCardContentWidth()
+  const titleHeight = measureWrappedTextHeight({
+    text: item.displayName,
+    font: TITLE_FONT,
+    maxWidth: Math.max(1, cardContentWidth - STATUS_PILL_MIN_WIDTH - HEADER_TOP_GAP),
+    lineHeight: TITLE_LINE_HEIGHT,
+  })
+  const headerTopHeight = Math.max(titleHeight + SUBTITLE_MARGIN_TOP + 20, STATUS_PILL_HEIGHT)
   const summaryText =
     item.detailStatus === 'ready' && item.detail ? getSummaryText(item.detail) : ''
-  const summaryLines = estimateLineCount(summaryText, isMobile ? 22 : 34, isMobile ? 3 : 2)
-  const summaryHeight = summaryLines > 0 ? summaryLines * 18 + 8 : 0
-  const headerHeight = headerTitleHeight + subtitleHeight + summaryHeight
-  const actionHeight = isMobile ? 52 : 44
+  const summaryHeight = measureWrappedTextHeight({
+    text: summaryText,
+    font: SUMMARY_FONT,
+    maxWidth: cardContentWidth,
+    lineHeight: SUMMARY_LINE_HEIGHT,
+    clamp: SUMMARY_MAX_LINES,
+  })
+  const headerHeight = headerTopHeight + summaryHeight
+  const actionHeight = isMobile ? MOBILE_ACTION_HEIGHT : DESKTOP_ACTION_HEIGHT
 
   if (item.detailStatus === 'ready' && item.detail) {
-    const meta = item.detail.meta
-    const hasAuthor = Boolean(meta?.author)
-    const hasDescription = Boolean(meta?.description)
-    const hasVersion = Boolean(meta?.version || meta?.version_code)
-
-    let metaHeight = 0
-    if (hasAuthor || hasDescription || hasVersion) {
-      metaHeight += 28
-
-      if (hasAuthor) {
-        metaHeight += 46
-      }
-
-      if (hasDescription && meta?.description) {
-        metaHeight += 22
-        metaHeight += estimateLineCount(meta.description, isMobile ? 24 : 38) * 18
-      }
-
-      if (hasVersion) {
-        metaHeight += 34
-      }
-
-      metaHeight += 18
-    }
-
-    return 32 + headerHeight + metaHeight + actionHeight
+    return (
+      CARD_VERTICAL_PADDING +
+      CARD_SECTION_GAP * 2 +
+      headerHeight +
+      estimateMetaPanelHeight(item.detail) +
+      actionHeight
+    )
   }
 
-  return 32 + headerHeight + 92 + actionHeight
+  const bodyHeight = item.detailStatus === 'error' ? ERROR_BODY_HEIGHT : LOADING_BODY_HEIGHT
+  return CARD_VERTICAL_PADDING + CARD_SECTION_GAP * 2 + headerHeight + bodyHeight + actionHeight
 }
 
 type VirtualEntry = {
@@ -412,6 +538,7 @@ defineExpose({
   margin: 0;
   font-size: 1rem;
   font-weight: 700;
+  line-height: 1.5rem;
   color: var(--text);
   word-break: break-word;
 }
@@ -419,6 +546,7 @@ defineExpose({
 .card-subtitle {
   margin: 0.35rem 0 0;
   font-size: 0.8rem;
+  line-height: 1.25rem;
   color: var(--text-secondary);
 }
 
@@ -489,6 +617,7 @@ defineExpose({
   display: block;
   font-size: 0.72rem;
   font-weight: 600;
+  line-height: 1rem;
   color: var(--text-secondary);
   margin-bottom: 0.28rem;
   text-transform: uppercase;
@@ -557,6 +686,7 @@ defineExpose({
   color: var(--text);
   font-size: 0.72rem;
   font-weight: 600;
+  line-height: 1rem;
 }
 
 .card-body--error {
