@@ -1,6 +1,5 @@
 <template>
   <div :class="['app-container', { dark: isDark }]">
-    <!-- 顶部标题栏 -->
     <header class="app-header glass-effect">
       <h1 class="header-title">
         Device Faker
@@ -8,18 +7,32 @@
       </h1>
     </header>
 
-    <!-- 主内容区域 -->
     <main class="main-content">
-      <div class="page-stage">
-        <Transition name="page-switch">
-          <KeepAlive>
-            <component :is="currentPageComponent" :key="activePage" class="page-view" />
-          </KeepAlive>
-        </Transition>
+      <div
+        ref="pageStageRef"
+        :class="['page-stage', { 'page-stage--dragging': isSwipeDragging }]"
+        @click.capture="handleSwipeClickCapture"
+        @pointercancel="handleSwipePointerCancel"
+        @pointerdown="handleSwipePointerDown"
+        @pointermove="handleSwipePointerMove"
+        @pointerup="handleSwipePointerEnd"
+      >
+        <div class="page-track" :style="pageTrackStyle">
+          <section
+            v-for="page in pages"
+            :key="page.id"
+            :aria-hidden="activePage !== page.id"
+            class="page-panel"
+          >
+            <div class="page-scroll">
+              <component :is="page.component" v-if="shouldRenderPage(page.id)" class="page-view" />
+              <AsyncPagePlaceholder v-else />
+            </div>
+          </section>
+        </div>
       </div>
     </main>
 
-    <!-- 底部导航栏 -->
     <nav class="bottom-nav glass-effect">
       <button
         v-for="page in pages"
@@ -37,13 +50,13 @@
 
 <script setup lang="ts">
 import {
-  ref,
   computed,
   defineAsyncComponent,
   defineComponent,
   h,
   onMounted,
   onUnmounted,
+  ref,
   watch,
 } from 'vue'
 import { Home, FileText, Smartphone, Settings } from 'lucide-vue-next'
@@ -58,6 +71,46 @@ type AppsPageComponent = (typeof import('./pages/AppsPage.vue'))['default']
 type TemplatePageComponent = (typeof import('./pages/TemplatePage.vue'))['default']
 type SettingsPageComponent = (typeof import('./pages/SettingsPage.vue'))['default']
 type PageId = 'home' | 'templates' | 'apps' | 'settings'
+type SwipeIntent = 'horizontal' | 'vertical' | null
+type ResizeObserverInstance = InstanceType<typeof window.ResizeObserver>
+
+const PAGE_ORDER: PageId[] = ['home', 'templates', 'apps', 'settings']
+const PAGE_INDEX_BY_ID: Record<PageId, number> = {
+  home: 0,
+  templates: 1,
+  apps: 2,
+  settings: 3,
+}
+const SWIPE_LOCK_DISTANCE_PX = 14
+const SWIPE_DISTANCE_RATIO = 0.18
+const SWIPE_VELOCITY_THRESHOLD = 0.65
+const EDGE_RESISTANCE = 0.35
+const CLICK_SUPPRESS_WINDOW_MS = 320
+const SWIPE_IGNORE_SELECTOR = [
+  '[data-page-swipe-ignore]',
+  'a',
+  'button',
+  'input',
+  'textarea',
+  'select',
+  'label',
+  '[role="button"]',
+  '.el-button',
+  '.el-input',
+  '.el-input__wrapper',
+  '.el-input__inner',
+  '.el-textarea',
+  '.el-select',
+  '.el-switch',
+  '.el-radio',
+  '.el-checkbox',
+  '.el-slider',
+  '.el-dialog',
+  '.el-overlay',
+  '.el-popper',
+  '.el-picker-panel',
+  '.el-message-box',
+].join(', ')
 
 const AsyncPagePlaceholder = defineComponent({
   name: 'AsyncPagePlaceholder',
@@ -78,6 +131,23 @@ let idleWarmupTimer: number | null = null
 let idleWarmupId: number | null = null
 let appDataWarmupTimer: number | null = null
 let appDataWarmupId: number | null = null
+let pageStageResizeObserver: ResizeObserverInstance | null = null
+let mediaQuery: ReturnType<typeof window.matchMedia> | null = null
+let mediaQueryListener: ((event: { matches: boolean }) => void) | null = null
+let pointerStartX = 0
+let pointerStartY = 0
+let pointerStartTime = 0
+let pointerIntent: SwipeIntent = null
+let suppressClickUntil = 0
+
+const pageStageRef = ref<HTMLElement | null>(null)
+const activePage = ref<PageId>('home')
+const renderedPageIds = ref<PageId[]>(['home'])
+const pageStageWidth = ref(window.innerWidth)
+const activePointerId = ref<number | null>(null)
+const dragOffsetPx = ref(0)
+const isSwipeDragging = ref(false)
+const systemPrefersDark = ref(window.matchMedia('(prefers-color-scheme: dark)').matches)
 
 function preloadAppsPage() {
   if (!appsPageLoader) {
@@ -140,52 +210,61 @@ const SettingsPage = defineAsyncComponent<SettingsPageComponent>({
 const configStore = useConfigStore()
 const appsStore = useAppsStore()
 const settingsStore = useSettingsStore()
+const { t } = useI18n()
 
-const activePage = ref('home')
-const systemPrefersDark = ref(window.matchMedia('(prefers-color-scheme: dark)').matches)
-let mediaQuery: ReturnType<typeof window.matchMedia> | null = null
-let mediaQueryListener: ((event: { matches: boolean }) => void) | null = null
+const versionDisplay = computed(() =>
+  configStore.moduleMetaReady ? configStore.moduleVersion : '--'
+)
+const isDark = computed(() => {
+  if (settingsStore.theme === 'system') {
+    return systemPrefersDark.value
+  }
 
-function getMainContentElement() {
-  return document.querySelector('.main-content') as HTMLElement | null
+  return settingsStore.theme === 'dark'
+})
+const pages = computed(() => [
+  { id: 'home' as const, label: t('nav.home'), icon: Home, component: StatusPage },
+  {
+    id: 'templates' as const,
+    label: t('nav.templates'),
+    icon: FileText,
+    component: TemplatePage,
+  },
+  { id: 'apps' as const, label: t('nav.apps'), icon: Smartphone, component: AppsPage },
+  {
+    id: 'settings' as const,
+    label: t('nav.settings'),
+    icon: Settings,
+    component: SettingsPage,
+  },
+])
+const activePageIndex = computed(() => PAGE_INDEX_BY_ID[activePage.value])
+const pageTrackStyle = computed(() => {
+  const translateX = -(activePageIndex.value * pageStageWidth.value) + dragOffsetPx.value
+
+  return {
+    transform: `translate3d(${translateX}px, 0, 0)`,
+    transition: isSwipeDragging.value ? 'none' : 'transform 260ms cubic-bezier(0.22, 1, 0.36, 1)',
+  }
+})
+
+function markPageAsRendered(pageId: PageId) {
+  if (renderedPageIds.value.includes(pageId)) {
+    return
+  }
+
+  renderedPageIds.value = [...renderedPageIds.value, pageId]
 }
 
-function resetMainContentScroll() {
-  const mainContent = getMainContentElement()
-  if (!mainContent) return
-
-  const previousBehavior = mainContent.style.scrollBehavior
-  mainContent.style.scrollBehavior = 'auto'
-  mainContent.scrollTop = 0
-  mainContent.scrollLeft = 0
-  mainContent.style.scrollBehavior = previousBehavior
+function shouldRenderPage(pageId: PageId) {
+  return renderedPageIds.value.includes(pageId) || activePage.value === pageId
 }
 
-function lockMainContentDuringTemplateEntry() {
-  const mainContent = getMainContentElement()
-  if (!mainContent) return
-
-  mainContent.classList.add('main-content--template-enter-lock')
-}
-
-function unlockMainContentDuringTemplateEntry() {
-  const mainContent = getMainContentElement()
-  if (!mainContent) return
-
-  mainContent.classList.remove('main-content--template-enter-lock')
-}
-
-function stabilizeTemplateEntryFromHome() {
-  lockMainContentDuringTemplateEntry()
-  resetMainContentScroll()
-
-  requestAnimationFrame(() => {
-    resetMainContentScroll()
-    requestAnimationFrame(() => {
-      resetMainContentScroll()
-      unlockMainContentDuringTemplateEntry()
-    })
-  })
+function syncPageStageWidth() {
+  const measuredWidth = pageStageRef.value?.clientWidth ?? window.innerWidth
+  if (measuredWidth > 0) {
+    pageStageWidth.value = measuredWidth
+  }
 }
 
 function warmPage(pageId: PageId, options: { includeAppData?: boolean } = {}) {
@@ -207,54 +286,232 @@ function warmPage(pageId: PageId, options: { includeAppData?: boolean } = {}) {
   }
 }
 
-function primePage(pageId: string) {
+function primePage(pageId: PageId) {
   if (pageId === 'home') {
     return
   }
 
-  warmPage(pageId as PageId, { includeAppData: pageId === 'apps' })
+  markPageAsRendered(pageId)
+  warmPage(pageId, { includeAppData: pageId === 'apps' })
 }
 
-function handlePageChange(pageId: string) {
-  const previousPage = activePage.value
+function primeNeighborPages(index: number) {
+  const previousPage = PAGE_ORDER[index - 1]
+  const nextPage = PAGE_ORDER[index + 1]
 
-  if (previousPage === pageId) {
+  if (previousPage) {
+    markPageAsRendered(previousPage)
+    primePage(previousPage)
+  }
+
+  if (nextPage) {
+    markPageAsRendered(nextPage)
+    primePage(nextPage)
+  }
+}
+
+function setActivePage(pageId: PageId) {
+  if (activePage.value === pageId) {
     return
   }
 
+  markPageAsRendered(pageId)
   activePage.value = pageId
-  const isTemplateFromHome = previousPage === 'home' && pageId === 'templates'
-
-  if (isTemplateFromHome) {
-    stabilizeTemplateEntryFromHome()
-  }
-
   primePage(pageId)
 }
 
-const versionDisplay = computed(() =>
-  configStore.moduleMetaReady ? configStore.moduleVersion : '--'
-)
-const isDark = computed(() => {
-  if (settingsStore.theme === 'system') {
-    return systemPrefersDark.value
+function handlePageChange(pageId: PageId) {
+  setActivePage(pageId)
+}
+
+function normalizeTargetElement(target: globalThis.EventTarget | null) {
+  if (target instanceof HTMLElement) {
+    return target
   }
 
-  return settingsStore.theme === 'dark'
-})
+  if (target instanceof window.Node) {
+    return target.parentElement
+  }
 
-const { t } = useI18n()
+  return null
+}
 
-const pages = computed(() => [
-  { id: 'home', label: t('nav.home'), icon: Home, component: StatusPage },
-  { id: 'templates', label: t('nav.templates'), icon: FileText, component: TemplatePage },
-  { id: 'apps', label: t('nav.apps'), icon: Smartphone, component: AppsPage },
-  { id: 'settings', label: t('nav.settings'), icon: Settings, component: SettingsPage },
-])
+function hasHorizontalScrollableAncestor(target: HTMLElement | null) {
+  let current = target
 
-const currentPageComponent = computed(
-  () => pages.value.find((page) => page.id === activePage.value)?.component || StatusPage
-)
+  while (current && current !== pageStageRef.value) {
+    const style = window.getComputedStyle(current)
+    const overflowX = style.overflowX
+    const isHorizontalScroller =
+      (overflowX === 'auto' || overflowX === 'scroll' || overflowX === 'overlay') &&
+      current.scrollWidth > current.clientWidth + 4
+
+    if (isHorizontalScroller) {
+      return true
+    }
+
+    current = current.parentElement
+  }
+
+  return false
+}
+
+function shouldIgnoreSwipeTarget(target: globalThis.EventTarget | null) {
+  const element = normalizeTargetElement(target)
+  if (!element) {
+    return false
+  }
+
+  if (element.closest(SWIPE_IGNORE_SELECTOR)) {
+    return true
+  }
+
+  return hasHorizontalScrollableAncestor(element)
+}
+
+function clampSwipeOffset(offsetPx: number) {
+  const activeIndex = activePageIndex.value
+  const maxOffset = pageStageWidth.value
+
+  let nextOffset = Math.max(Math.min(offsetPx, maxOffset), -maxOffset)
+
+  if (activeIndex === 0 && nextOffset > 0) {
+    nextOffset *= EDGE_RESISTANCE
+  }
+
+  if (activeIndex === PAGE_ORDER.length - 1 && nextOffset < 0) {
+    nextOffset *= EDGE_RESISTANCE
+  }
+
+  return nextOffset
+}
+
+function releaseSwipeCapture(pointerId: number | null) {
+  if (
+    pointerId !== null &&
+    pageStageRef.value?.hasPointerCapture &&
+    pageStageRef.value.hasPointerCapture(pointerId)
+  ) {
+    pageStageRef.value.releasePointerCapture(pointerId)
+  }
+}
+
+function resetSwipeTracking(pointerId: number | null = activePointerId.value) {
+  releaseSwipeCapture(pointerId)
+  activePointerId.value = null
+  dragOffsetPx.value = 0
+  isSwipeDragging.value = false
+  pointerIntent = null
+}
+
+function handleSwipePointerDown(event: globalThis.PointerEvent) {
+  if (event.button !== 0 || activePointerId.value !== null) {
+    return
+  }
+
+  if (shouldIgnoreSwipeTarget(event.target)) {
+    return
+  }
+
+  activePointerId.value = event.pointerId
+  pointerStartX = event.clientX
+  pointerStartY = event.clientY
+  pointerStartTime = event.timeStamp
+  pointerIntent = null
+  dragOffsetPx.value = 0
+  isSwipeDragging.value = false
+  primeNeighborPages(activePageIndex.value)
+}
+
+function handleSwipePointerMove(event: globalThis.PointerEvent) {
+  if (activePointerId.value !== event.pointerId) {
+    return
+  }
+
+  const deltaX = event.clientX - pointerStartX
+  const deltaY = event.clientY - pointerStartY
+
+  if (pointerIntent === null) {
+    const absX = Math.abs(deltaX)
+    const absY = Math.abs(deltaY)
+
+    if (absX < SWIPE_LOCK_DISTANCE_PX && absY < SWIPE_LOCK_DISTANCE_PX) {
+      return
+    }
+
+    if (absX > absY * 1.1) {
+      pointerIntent = 'horizontal'
+      isSwipeDragging.value = true
+      pageStageRef.value?.setPointerCapture?.(event.pointerId)
+    } else {
+      pointerIntent = 'vertical'
+      resetSwipeTracking(event.pointerId)
+      return
+    }
+  }
+
+  if (pointerIntent !== 'horizontal') {
+    return
+  }
+
+  dragOffsetPx.value = clampSwipeOffset(deltaX)
+  event.preventDefault()
+}
+
+function handleSwipePointerEnd(event: globalThis.PointerEvent) {
+  if (activePointerId.value !== event.pointerId) {
+    return
+  }
+
+  const totalDeltaX = event.clientX - pointerStartX
+  const elapsedMs = Math.max(event.timeStamp - pointerStartTime, 1)
+  const velocityX = totalDeltaX / elapsedMs
+  const swipeThresholdPx = pageStageWidth.value * SWIPE_DISTANCE_RATIO
+  const currentIndex = activePageIndex.value
+  let targetIndex = currentIndex
+
+  if (pointerIntent === 'horizontal') {
+    if (
+      (totalDeltaX <= -swipeThresholdPx || velocityX <= -SWIPE_VELOCITY_THRESHOLD) &&
+      currentIndex < PAGE_ORDER.length - 1
+    ) {
+      targetIndex = currentIndex + 1
+    } else if (
+      (totalDeltaX >= swipeThresholdPx || velocityX >= SWIPE_VELOCITY_THRESHOLD) &&
+      currentIndex > 0
+    ) {
+      targetIndex = currentIndex - 1
+    }
+
+    if (Math.abs(totalDeltaX) > 8) {
+      suppressClickUntil = window.performance.now() + CLICK_SUPPRESS_WINDOW_MS
+    }
+  }
+
+  resetSwipeTracking(event.pointerId)
+
+  const targetPage = PAGE_ORDER[targetIndex]
+  if (targetPage && targetPage !== activePage.value) {
+    setActivePage(targetPage)
+  }
+}
+
+function handleSwipePointerCancel(event: globalThis.PointerEvent) {
+  if (activePointerId.value !== event.pointerId) {
+    return
+  }
+
+  resetSwipeTracking(event.pointerId)
+}
+
+function handleSwipeClickCapture(event: globalThis.MouseEvent) {
+  if (window.performance.now() >= suppressClickUntil) {
+    return
+  }
+
+  event.preventDefault()
+  event.stopPropagation()
+}
 
 watch(
   isDark,
@@ -311,6 +568,16 @@ onMounted(() => {
   scheduleConfigBootstrap()
   schedulePageWarmup()
   scheduleAppDataWarmup()
+  syncPageStageWidth()
+
+  window.addEventListener('resize', syncPageStageWidth, { passive: true })
+
+  if (typeof window.ResizeObserver === 'function' && pageStageRef.value) {
+    pageStageResizeObserver = new window.ResizeObserver(() => {
+      syncPageStageWidth()
+    })
+    pageStageResizeObserver.observe(pageStageRef.value)
+  }
 
   mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
   systemPrefersDark.value = mediaQuery.matches
@@ -321,6 +588,11 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  resetSwipeTracking(activePointerId.value)
+  window.removeEventListener('resize', syncPageStageWidth)
+  pageStageResizeObserver?.disconnect()
+  pageStageResizeObserver = null
+
   if (mediaQuery && mediaQueryListener) {
     mediaQuery.removeEventListener('change', mediaQueryListener)
   }
@@ -347,14 +619,12 @@ onUnmounted(() => {
 .app-container {
   display: flex;
   flex-direction: column;
-  min-height: 100vh; /* 改为最小高度,允许内容超出视口 */
+  min-height: 100vh;
   background: var(--background);
-  /* 移除顶部内边距,让顶栏延伸到状态栏 */
   padding: 0 var(--safe-area-inset-right) var(--safe-area-inset-bottom) var(--safe-area-inset-left);
 }
 
 .app-header {
-  /* 添加顶部内边距以适配状态栏 */
   padding-top: calc(var(--safe-area-inset-top) + 1rem);
   padding-left: 1rem;
   padding-right: 1rem;
@@ -362,17 +632,14 @@ onUnmounted(() => {
   border-radius: 0 0 1rem 1rem;
   margin-bottom: 1rem;
   box-shadow: 0 4px 12px var(--shadow);
-  position: relative; /* 改为相对定位,不固定在视野 */
+  position: relative;
   overflow: hidden;
 }
 
 .app-header::before {
   content: '';
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   background: linear-gradient(135deg, var(--gradient-start) 0%, var(--gradient-end) 100%);
   opacity: 0.08;
   z-index: 0;
@@ -403,23 +670,55 @@ onUnmounted(() => {
 
 .main-content {
   flex: 1;
-  overflow-y: scroll;
-  padding: 0 1rem;
-  padding-bottom: 5.5rem; /* 为固定定位的底栏留出空间 */
-  /* 优化滚动性能 */
-  -webkit-overflow-scrolling: touch;
-  scroll-behavior: smooth;
-  /* 确保Android WebView正确处理触摸滚动 */
-  touch-action: pan-y;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  display: flex;
 }
 
 .page-stage {
   position: relative;
-  min-height: 100%;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  touch-action: pan-y;
 }
 
-.main-content--template-enter-lock {
-  overflow: hidden;
+.page-stage--dragging {
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grabbing;
+}
+
+.page-track {
+  display: flex;
+  height: 100%;
+  will-change: transform;
+}
+
+.page-panel {
+  flex: 0 0 100%;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  padding: 0 1rem;
+}
+
+.page-scroll {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-bottom: 5.5rem;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  scroll-behavior: smooth;
+  touch-action: pan-y;
+}
+
+.page-stage--dragging .page-scroll {
+  scroll-behavior: auto;
 }
 
 .page-view {
@@ -465,39 +764,6 @@ onUnmounted(() => {
   }
 }
 
-.page-switch-enter-active {
-  position: relative;
-  z-index: 2;
-  transition:
-    opacity 0.18s ease,
-    transform 0.18s ease;
-  will-change: opacity, transform;
-}
-
-.page-switch-leave-active {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  z-index: 1;
-  pointer-events: none;
-  transition:
-    opacity 0.18s ease,
-    transform 0.18s ease;
-  will-change: opacity, transform;
-}
-
-.page-switch-enter-from,
-.page-switch-leave-to {
-  opacity: 0;
-  transform: translateY(12px);
-}
-
-.page-switch-enter-to,
-.page-switch-leave-from {
-  opacity: 1;
-  transform: translateY(0);
-}
-
 .bottom-nav {
   display: flex;
   justify-content: space-around;
@@ -505,13 +771,12 @@ onUnmounted(() => {
   padding: 0.75rem 0;
   border-radius: 1rem 1rem 0 0;
   box-shadow: 0 -4px 12px var(--shadow);
-  position: fixed; /* 使用固定定位 */
+  position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
-  z-index: 100; /* 正常显示时的优先级 */
+  z-index: 100;
   pointer-events: auto;
-  /* 添加真正的毛玻璃效果 */
   background: rgba(255, 255, 255, 0.8);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);

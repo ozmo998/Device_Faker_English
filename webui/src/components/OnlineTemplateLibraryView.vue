@@ -46,7 +46,7 @@
         />
       </label>
 
-      <div class="chip-group">
+      <div class="chip-group" data-page-swipe-ignore>
         <button
           :class="['filter-chip', { active: onlineTemplatesStore.selectedCategory === 'all' }]"
           type="button"
@@ -68,6 +68,7 @@
       <div
         v-if="onlineTemplatesStore.availableBrands.length > 0"
         class="chip-group chip-group--brand"
+        data-page-swipe-ignore
       >
         <button
           :class="['brand-chip', { active: onlineTemplatesStore.selectedBrand === null }]"
