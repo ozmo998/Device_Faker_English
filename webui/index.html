@@ -6,8 +6,73 @@
   <meta name="theme-color" content="#f2f9ff" id="theme-color">
   <title>Device Faker Manager</title>
   <link rel="stylesheet" href="https://mui.kernelsu.org/internal/insets.css">
+  <script>
+    (() => {
+      const SETTINGS_KEY = 'device_faker_settings'
+      const DARK_THEME_COLOR = '#1a2538'
+      const LIGHT_THEME_COLOR = '#f2f9ff'
+      const DARK_BACKGROUND = '#0f172a'
+      const LIGHT_BACKGROUND = '#f9fafb'
+
+      const root = document.documentElement
+      const themeMeta = document.getElementById('theme-color')
+
+      const resolveStoredTheme = () => {
+        try {
+          const raw = window.localStorage.getItem(SETTINGS_KEY)
+          if (!raw) {
+            return 'system'
+          }
+
+          const parsed = JSON.parse(raw)
+          const theme = parsed?.theme
+          return theme === 'light' || theme === 'dark' || theme === 'system'
+            ? theme
+            : 'system'
+        } catch {
+          return 'system'
+        }
+      }
+
+      const theme = resolveStoredTheme()
+      const prefersDark =
+        typeof window.matchMedia === 'function' &&
+        window.matchMedia('(prefers-color-scheme: dark)').matches
+      const isDark = theme === 'dark' || (theme === 'system' && prefersDark)
+
+      root.classList.toggle('dark', isDark)
+      root.dataset.theme = isDark ? 'dark' : 'light'
+      root.style.colorScheme = isDark ? 'dark' : 'light'
+      root.style.backgroundColor = isDark ? DARK_BACKGROUND : LIGHT_BACKGROUND
+
+      if (themeMeta) {
+        themeMeta.setAttribute('content', isDark ? DARK_THEME_COLOR : LIGHT_THEME_COLOR)
+      }
+
+      const applyBodyBackground = () => {
+        if (!document.body) {
+          return
+        }
+
+        document.body.style.margin = '0'
+        document.body.style.backgroundColor = isDark ? DARK_BACKGROUND : LIGHT_BACKGROUND
+
+        const app = document.getElementById('app')
+        if (app) {
+          app.style.minHeight = '100vh'
+          app.style.backgroundColor = isDark ? DARK_BACKGROUND : LIGHT_BACKGROUND
+        }
+      }
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', applyBodyBackground, { once: true })
+      } else {
+        applyBodyBackground()
+      }
+    })()
+  </script>
 </head>
-<body>
+<body style="margin: 0; background: #f9fafb;">
   <div id="app"></div>
   <script type="module" src="/src/main.ts"></script>
 </body>

@@ -57,7 +57,7 @@
 
 html,
 body {
-  min-height: 100%;
+  height: 100%;
   margin: 0;
   padding: 0;
   font-family:
@@ -72,15 +72,13 @@ body {
     background-color 0.3s ease,
     color 0.3s ease;
   -webkit-tap-highlight-color: transparent;
-  overflow-x: hidden;
-  /* Android 平台滚动优化 - 移除overscroll-behavior以避免滑动问题 */
   touch-action: pan-y;
   /* 为滚动条预留固定空间，防止出现/消失时页面跳动 */
   scrollbar-gutter: stable;
 }
 
 #app {
-  min-height: 100%; /* 改为最小高度，允许内容超出 */
+  height: 100%;
   width: 100%;
   /* 确保宽度稳定，不受滚动条影响 */
   box-sizing: border-box;

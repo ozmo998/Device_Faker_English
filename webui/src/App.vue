@@ -1,12 +1,5 @@
 <template>
   <div :class="['app-container', { dark: isDark }]">
-    <header class="app-header glass-effect">
-      <h1 class="header-title">
-        Device Faker
-        <span class="version">{{ versionDisplay }}</span>
-      </h1>
-    </header>
-
     <main class="main-content">
       <div
         ref="pageStageRef"
@@ -24,9 +17,27 @@
             :aria-hidden="activePage !== page.id"
             class="page-panel"
           >
-            <div class="page-scroll">
-              <component :is="page.component" v-if="shouldRenderPage(page.id)" class="page-view" />
-              <AsyncPagePlaceholder v-else />
+            <div
+              class="page-scroll"
+              @touchstart="handlePageScrollTouchStart"
+              @touchmove="handlePageScrollTouchMove"
+              @touchend="handlePageScrollTouchEnd"
+              @touchcancel="handlePageScrollTouchEnd"
+            >
+              <div class="page-scroll-content">
+                <header class="app-header">
+                  <h1 class="header-title">
+                    Device Faker
+                    <span class="version">{{ versionDisplay }}</span>
+                  </h1>
+                </header>
+                <component
+                  :is="page.component"
+                  v-if="shouldRenderPage(page.id)"
+                  class="page-view"
+                />
+                <AsyncPagePlaceholder v-else />
+              </div>
             </div>
           </section>
         </div>
@@ -64,6 +75,7 @@ import AppsPageSkeleton from './components/apps/AppsPageSkeleton.vue'
 import { useAppsStore } from './stores/apps'
 import { useConfigStore } from './stores/config'
 import { useSettingsStore } from './stores/settings'
+import { applyThemeToDocument } from './utils/theme'
 import { useI18n } from './utils/i18n'
 import StatusPage from './pages/StatusPage.vue'
 
@@ -73,7 +85,6 @@ type SettingsPageComponent = (typeof import('./pages/SettingsPage.vue'))['defaul
 type PageId = 'home' | 'templates' | 'apps' | 'settings'
 type SwipeIntent = 'horizontal' | 'vertical' | null
 type ResizeObserverInstance = InstanceType<typeof window.ResizeObserver>
-
 const PAGE_ORDER: PageId[] = ['home', 'templates', 'apps', 'settings']
 const PAGE_INDEX_BY_ID: Record<PageId, number> = {
   home: 0,
@@ -86,6 +97,9 @@ const SWIPE_DISTANCE_RATIO = 0.18
 const SWIPE_VELOCITY_THRESHOLD = 0.65
 const EDGE_RESISTANCE = 0.35
 const CLICK_SUPPRESS_WINDOW_MS = 320
+const OVERSCROLL_BOUNCE_MAX_PX = 88
+const OVERSCROLL_BOUNCE_RESISTANCE = 0.5
+const OVERSCROLL_STRETCH_RATIO = 0.001
 const SWIPE_IGNORE_SELECTOR = [
   '[data-page-swipe-ignore]',
   'a',
@@ -134,6 +148,12 @@ let appDataWarmupId: number | null = null
 let pageStageResizeObserver: ResizeObserverInstance | null = null
 let mediaQuery: ReturnType<typeof window.matchMedia> | null = null
 let mediaQueryListener: ((event: { matches: boolean }) => void) | null = null
+let overscrollReleaseTimer: number | null = null
+let overscrollScrollElement: HTMLElement | null = null
+let overscrollTouchId: number | null = null
+let overscrollStartX = 0
+let overscrollStartY = 0
+let overscrollOffset = 0
 let pointerStartX = 0
 let pointerStartY = 0
 let pointerStartTime = 0
@@ -356,6 +376,26 @@ function hasHorizontalScrollableAncestor(target: HTMLElement | null) {
   return false
 }
 
+function hasVerticalScrollableAncestor(target: HTMLElement | null, boundary: HTMLElement) {
+  let current = target
+
+  while (current && current !== boundary) {
+    const style = window.getComputedStyle(current)
+    const overflowY = style.overflowY
+    const isVerticalScroller =
+      (overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay') &&
+      current.scrollHeight > current.clientHeight + 4
+
+    if (isVerticalScroller) {
+      return true
+    }
+
+    current = current.parentElement
+  }
+
+  return false
+}
+
 function shouldIgnoreSwipeTarget(target: globalThis.EventTarget | null) {
   const element = normalizeTargetElement(target)
   if (!element) {
@@ -513,13 +553,165 @@ function handleSwipeClickCapture(event: globalThis.MouseEvent) {
   event.stopPropagation()
 }
 
+function findTouchById(
+  touchList: globalThis.TouchList,
+  touchId: number | null
+): globalThis.Touch | null {
+  if (touchId === null) {
+    return null
+  }
+
+  for (let index = 0; index < touchList.length; index += 1) {
+    const touch = touchList.item(index)
+    if (touch?.identifier === touchId) {
+      return touch
+    }
+  }
+
+  return null
+}
+
+function setOverscrollOffset(scrollElement: HTMLElement, offsetPx: number) {
+  overscrollOffset = offsetPx
+  const stretchScale = offsetPx > 0 ? 1 + Math.abs(offsetPx) * OVERSCROLL_STRETCH_RATIO : 1
+  const translateY = offsetPx < 0 ? offsetPx : 0
+
+  scrollElement.style.setProperty('--overscroll-scale-y', `${stretchScale}`)
+  scrollElement.style.setProperty('--overscroll-translate-y', `${translateY}px`)
+  scrollElement.style.setProperty('--overscroll-origin-y', 'top')
+}
+
+function clearOverscrollState() {
+  overscrollScrollElement = null
+  overscrollTouchId = null
+  overscrollStartX = 0
+  overscrollStartY = 0
+  overscrollOffset = 0
+}
+
+function releaseOverscroll(scrollElement: HTMLElement, animated = true) {
+  if (overscrollReleaseTimer !== null) {
+    window.clearTimeout(overscrollReleaseTimer)
+    overscrollReleaseTimer = null
+  }
+
+  if (animated) {
+    scrollElement.classList.add('page-scroll--releasing')
+  } else {
+    scrollElement.classList.remove('page-scroll--releasing')
+  }
+
+  setOverscrollOffset(scrollElement, 0)
+
+  if (!animated) {
+    scrollElement.classList.remove('page-scroll--overscrolling')
+    return
+  }
+
+  overscrollReleaseTimer = window.setTimeout(() => {
+    scrollElement.classList.remove('page-scroll--releasing')
+    scrollElement.classList.remove('page-scroll--overscrolling')
+    overscrollReleaseTimer = null
+  }, 190)
+}
+
+function handlePageScrollTouchStart(event: globalThis.TouchEvent) {
+  if (event.touches.length !== 1) {
+    return
+  }
+
+  const scrollElement = event.currentTarget
+  if (!(scrollElement instanceof HTMLElement)) {
+    return
+  }
+
+  if (hasVerticalScrollableAncestor(normalizeTargetElement(event.target), scrollElement)) {
+    clearOverscrollState()
+    return
+  }
+
+  const touch = event.touches.item(0)
+  if (!touch) {
+    return
+  }
+
+  if (overscrollReleaseTimer !== null) {
+    window.clearTimeout(overscrollReleaseTimer)
+    overscrollReleaseTimer = null
+  }
+
+  scrollElement.classList.remove('page-scroll--releasing')
+  overscrollScrollElement = scrollElement
+  overscrollTouchId = touch.identifier
+  overscrollStartX = touch.clientX
+  overscrollStartY = touch.clientY
+  overscrollOffset = 0
+}
+
+function handlePageScrollTouchMove(event: globalThis.TouchEvent) {
+  const scrollElement = overscrollScrollElement
+  if (!scrollElement || event.currentTarget !== scrollElement) {
+    return
+  }
+
+  const touch = findTouchById(event.touches, overscrollTouchId)
+  if (!touch) {
+    return
+  }
+
+  const deltaX = touch.clientX - overscrollStartX
+  const deltaY = touch.clientY - overscrollStartY
+
+  if (Math.abs(deltaY) <= Math.abs(deltaX)) {
+    if (overscrollOffset !== 0) {
+      releaseOverscroll(scrollElement)
+    }
+    return
+  }
+
+  const maxScrollTop = Math.max(scrollElement.scrollHeight - scrollElement.clientHeight, 0)
+  const isAtTop = scrollElement.scrollTop <= 0
+  const isAtBottom = scrollElement.scrollTop >= maxScrollTop - 1
+  const pullingPastTop = isAtTop && deltaY > 0
+  const pullingPastBottom = isAtBottom && deltaY < 0
+
+  if (!pullingPastTop && !pullingPastBottom) {
+    if (overscrollOffset !== 0) {
+      releaseOverscroll(scrollElement)
+    }
+    return
+  }
+
+  const resistedOffset =
+    Math.sign(deltaY) *
+    Math.min(OVERSCROLL_BOUNCE_MAX_PX, Math.abs(deltaY) * OVERSCROLL_BOUNCE_RESISTANCE)
+
+  scrollElement.classList.add('page-scroll--overscrolling')
+  scrollElement.classList.remove('page-scroll--releasing')
+  setOverscrollOffset(scrollElement, resistedOffset)
+  event.preventDefault()
+}
+
+function handlePageScrollTouchEnd(event: globalThis.TouchEvent) {
+  const scrollElement = overscrollScrollElement
+  if (!scrollElement || event.currentTarget !== scrollElement) {
+    return
+  }
+
+  if (overscrollOffset !== 0) {
+    releaseOverscroll(scrollElement)
+  } else {
+    scrollElement.classList.remove('page-scroll--overscrolling')
+    scrollElement.classList.remove('page-scroll--releasing')
+  }
+
+  clearOverscrollState()
+}
+
 watch(
   isDark,
   (isDarkMode) => {
-    document.documentElement.classList.toggle('dark', isDarkMode)
-    document
-      .getElementById('theme-color')
-      ?.setAttribute('content', isDarkMode ? '#1a2538' : '#f2f9ff')
+    applyThemeToDocument(isDarkMode)
   },
   { immediate: true }
 )
@@ -612,14 +804,19 @@ onUnmounted(() => {
   if (appDataWarmupId !== null && typeof window.cancelIdleCallback === 'function') {
     window.cancelIdleCallback(appDataWarmupId)
   }
+
+  if (overscrollReleaseTimer !== null) {
+    window.clearTimeout(overscrollReleaseTimer)
+  }
 })
 </script>
 
 <style scoped>
 .app-container {
   display: flex;
-  flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   background: var(--background);
   padding: 0 var(--safe-area-inset-right) var(--safe-area-inset-bottom) var(--safe-area-inset-left);
 }
@@ -630,10 +827,12 @@ onUnmounted(() => {
   padding-right: 1rem;
   padding-bottom: 1rem;
   border-radius: 0 0 1rem 1rem;
-  margin-bottom: 1rem;
+  margin-bottom: 0.5rem;
   box-shadow: 0 4px 12px var(--shadow);
   position: relative;
   overflow: hidden;
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border);
 }
 
 .app-header::before {
@@ -669,7 +868,7 @@ onUnmounted(() => {
 }
 
 .main-content {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
   padding: 0;
   overflow: hidden;
@@ -706,15 +905,29 @@ onUnmounted(() => {
 }
 
 .page-scroll {
+  --overscroll-scale-y: 1;
+  --overscroll-translate-y: 0px;
+  --overscroll-origin-y: top;
   height: 100%;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   padding-bottom: 5.5rem;
   -webkit-overflow-scrolling: touch;
-  overscroll-behavior-y: contain;
+  overscroll-behavior-y: auto;
   scroll-behavior: smooth;
   touch-action: pan-y;
+}
+
+.page-scroll-content {
+  min-height: 100%;
+  transform: translate3d(0, var(--overscroll-translate-y), 0) scaleY(var(--overscroll-scale-y));
+  transform-origin: 50% var(--overscroll-origin-y);
+  will-change: transform;
+}
+
+.page-scroll--releasing .page-scroll-content {
+  transition: transform 180ms cubic-bezier(0.2, 0.9, 0.3, 1);
 }
 
 .page-stage--dragging .page-scroll {

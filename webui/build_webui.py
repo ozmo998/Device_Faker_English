@@ -12,12 +12,35 @@ import logging
 from pathlib import Path
 from typing import Optional
 
+
+def configure_utf8_console() -> None:
+    """优先将控制台输出切换为 UTF-8，避免 Windows 下 emoji 输出导致构建脚本崩溃。"""
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if stream is not None and hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
+configure_utf8_console()
+
 # 设置日志
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+def write_console_line(line: str) -> None:
+    """稳健地向控制台输出一行，避免 Windows 控制台编码导致构建脚本崩溃。"""
+    text = f"{line}\n"
+    try:
+        sys.stdout.write(text)
+    except UnicodeEncodeError:
+        encoding = sys.stdout.encoding or "utf-8"
+        safe_text = text.encode(encoding, errors="replace").decode(encoding, errors="replace")
+        sys.stdout.write(safe_text)
+    sys.stdout.flush()
 
 class WebUIBuilder:
     """WebUI 项目构建器"""
@@ -124,15 +147,13 @@ class WebUIBuilder:
             while True:
                 line = process.stdout.readline()
                 if line:
-                    # 直接打印到控制台，保持原始格式
-                    print(line.rstrip())
-                    sys.stdout.flush()
+                    write_console_line(line.rstrip())
                 elif process.poll() is not None:
                     # 进程已结束，读取剩余输出
                     remaining = process.stdout.read()
                     if remaining:
-                        print(remaining.rstrip())
-                        sys.stdout.flush()
+                        for extra_line in remaining.splitlines():
+                            write_console_line(extra_line)
                     break
             
             return_code = process.returncode
@@ -331,19 +352,22 @@ def main():
         
         # 默认执行完整构建流程（类似 build_android.py）
         if args.command == "build":
-            print("机型伪装 WebUI 构建脚本")
-            print("=" * 50)
+            write_console_line("机型伪装 WebUI 构建脚本")
+            write_console_line("=" * 50)
             
-            print("\n=== 执行构建流程 ===")
+            write_console_line("")
+            write_console_line("=== 执行构建流程 ===")
             if not builder.build():
-                print("❌ 构建失败")
+                write_console_line("❌ 构建失败")
                 sys.exit(1)
             
-            print("\n" + "=" * 50)
-            print("✅ 构建完成！")
-            print(f"构建产物位于 {builder.dist_dir} 目录")
-            print("\n构建产物已集成到模块中")
-            print("=" * 50)
+            write_console_line("")
+            write_console_line("=" * 50)
+            write_console_line("✅ 构建完成！")
+            write_console_line(f"构建产物位于 {builder.dist_dir} 目录")
+            write_console_line("")
+            write_console_line("构建产物已集成到模块中")
+            write_console_line("=" * 50)
         
         elif args.command == "dev":
             builder.dev()
