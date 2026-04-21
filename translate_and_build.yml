@@ -1,0 +1,68 @@
+name: Translate and Build
+on:
+  workflow_dispatch: # Allows you to run it manually
+  schedule:
+    - cron: '0 0 * * *' # Runs automatically every night
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install Dependencies
+        run: pip install requests
+
+      - name: Sync with Upstream
+        run: |
+          git remote add upstream https://github.com/Seyud/device_faker.git
+          git fetch upstream
+          git merge upstream/main --no-edit || echo "No changes to sync"
+
+      - name: Translate Chinese Files
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          python3 - <<EOF
+          import os, requests, json
+
+          def translate(text):
+              if not text.strip(): return text
+              url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={os.environ['GEMINI_API_KEY']}"
+              prompt = f"Translate the following Chinese text from an Android module to English. Keep technical IDs and shell commands exactly as they are. Return only the translated text:\n\n{text}"
+              response = requests.post(url, json={"contents": [{"parts":[{"text": prompt}]}]})
+              return response.json()['candidates'][0]['content']['parts'][0]['text']
+
+          # Files likely containing Chinese: module.prop and README.md
+          for target in ['module.prop', 'README.md']:
+              if os.path.exists(target):
+                  with open(target, 'r', encoding='utf-8') as f:
+                      content = f.read()
+                  with open(target, 'w', encoding='utf-8') as f:
+                      f.write(translate(content))
+          EOF
+
+      - name: Apply Personal Profiles
+        run: |
+          # Example: Replacing a line in the config with your specific model
+          # Adjust 'config.json' or 'system.prop' to whatever file holds your profiles
+          if [ -f "module.prop" ]; then
+            sed -i 's/description=.*/description=My English Translated Device Faker with Custom Profiles/g' module.prop
+          fi
+          # Add your profile logic here (e.g., cp my_custom_profile.json assets/config.json)
+
+      - name: Commit and Push Changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Auto-update: Translation and Profile applied" || exit 0
+          git push
